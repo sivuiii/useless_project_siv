@@ -1,245 +1,192 @@
-# eye_blur_dynamic.py
-import sys
-import time
-import math
-from collections import deque
-
 import cv2
 import numpy as np
 import mediapipe as mp
-import mss
-from PyQt5 import QtCore, QtGui, QtWidgets
+import time
+import random
+import string
+from pynput import keyboard, mouse
 
-# ---------------- CONFIG ----------------
-FPS = 18                      # UI update rate
-BLUR_DOWNSCALE = 0.25         # blur on a small image, then upscale (speed)
-GAUSSIAN_KERNEL = (21, 21)    # blur kernel (kept moderate because downscaling amplifies blur)
-SMOOTHING_ALPHA = 0.6         # smoothing for blend factor (0..1) higher = smoother
-EYE_FRAMES_SMOOTH = 3         # average over last N frames for EAR
-WEBCAM_RES = (640, 480)       # webcam capture size for face detection
-CLICK_THROUGH = True          # True => window won't capture mouse clicks (pass-through)
-# EAR calibration: typical EAR open ~0.26-0.32, closed ~0.12-0.18 — tune per camera/person
-EAR_MIN = 0.12   # EAR at fully closed (maps to blur_factor = 0.0)
-EAR_MAX = 0.30   # EAR at wide open (maps to blur_factor = 1.0)
-# ----------------------------------------
+# --- CONFIGURATION ---
+# Gaze detection sensitivity. Lower numbers mean you have to look further away to trigger the effect.
+# A good range is 0.1 to 0.3.
+GAZE_THRESHOLD_X = 0.2
+GAZE_THRESHOLD_Y = 0.2
 
+# --- GLOBAL STATE VARIABLES ---
+# These variables will be updated by the computer vision thread and read by the input listeners.
+keyboard_should_scramble = False
+mouse_should_invert = False
+last_mouse_pos = (0, 0)
+is_inverting_flag = False # Prevents recursive mouse events
+
+# --- INITIALIZE MEDIAPIPE ---
 mp_face_mesh = mp.solutions.face_mesh
-FACE_MESH = mp_face_mesh.FaceMesh(
-    static_image_mode=False,
+face_mesh = mp_face_mesh.FaceMesh(
     max_num_faces=1,
-    refine_landmarks=True,
+    refine_landmarks=True,  # This is crucial for iris tracking
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5)
 
-# landmark groups for drawing
-LEFT_EYE_IDX = [33, 160, 158, 133, 153, 144]
-RIGHT_EYE_IDX = [362, 385, 387, 263, 373, 380]
-LEFT_EYEBROW = [70, 63, 105, 66, 107]
-RIGHT_EYEBROW = [300, 293, 334, 296, 336]
-LIPS = [78, 95, 88, 178, 87, 14, 317, 402, 318, 324]
-FACE_OUT = [10, 109, 67, 103, 54, 21, 162, 127, 234, 93]
+# --- KEYBOARD CONTROL ---
+keyboard_controller = keyboard.Controller()
 
-# Helper: convert OpenCV BGR to QImage
-def cv_to_qimage(cv_img):
-    h, w = cv_img.shape[:2]
-    rgb = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
-    return QtGui.QImage(rgb.data, w, h, 3 * w, QtGui.QImage.Format_RGB888)
+def get_random_char():
+    """Returns a random lowercase letter."""
+    return random.choice(string.ascii_lowercase)
 
-def eye_aspect_ratio(landmarks, indices):
-    # expects landmarks list of (x,y)
-    a = np.linalg.norm(np.array(landmarks[indices[1]]) - np.array(landmarks[indices[5]]))
-    b = np.linalg.norm(np.array(landmarks[indices[2]]) - np.array(landmarks[indices[4]]))
-    c = np.linalg.norm(np.array(landmarks[indices[0]]) - np.array(landmarks[indices[3]])) + 1e-8
-    ear = (a + b) / (2.0 * c)
-    return ear
+def on_press(key):
+    """Callback function for when a key is pressed."""
+    global keyboard_should_scramble
+    if keyboard_should_scramble:
+        try:
+            # Check if the key is an alphanumeric character
+            if hasattr(key, 'char') and key.char and key.char.isalnum():
+                random_char = get_random_char()
+                # Use the controller to type the new character
+                keyboard_controller.type(random_char)
+                # Suppress the original key press by returning False
+                return False
+        except AttributeError:
+            pass # Special keys (like Shift, Ctrl) will pass through
 
-class FullOverlay(QtWidgets.QWidget):
-    def __init__(self, width, height):
-        super().__init__()
-        flags = (QtCore.Qt.WindowStaysOnTopHint | QtCore.Qt.FramelessWindowHint)
-        if CLICK_THROUGH:
-            flags |= QtCore.Qt.WindowTransparentForInput
-        self.setWindowFlags(flags)
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        # show fullscreen on primary screen
-        self.showFullScreen()
-        self.setFixedSize(width, height)
-        self._pix = None
-        self._lock = QtCore.QMutex()
+# Start the keyboard listener in a non-blocking way
+keyboard_listener = keyboard.Listener(on_press=on_press)
+keyboard_listener.start()
 
-    def set_frame(self, frame_bgr):
-        """Thread-safe update of the current frame (BGR cv2 image)"""
-        with QtCore.QMutexLocker(self._lock):
-            self._pix = QtGui.QPixmap.fromImage(cv_to_qimage(frame_bgr))
-        self.update()
 
-    def paintEvent(self, event):
-        painter = QtGui.QPainter(self)
-        with QtCore.QMutexLocker(self._lock):
-            pix = self._pix
-        if pix is None:
-            painter.fillRect(self.rect(), QtGui.QColor(0, 0, 0, 0))
-        else:
-            painter.drawPixmap(0, 0, pix)
-        painter.end()
+# --- MOUSE CONTROL ---
+mouse_controller = mouse.Controller()
 
-class EyeBlurController(QtCore.QObject):
-    def __init__(self, overlay):
-        super().__init__()
-        self.overlay = overlay
+def on_move(x, y):
+    """Callback function for when the mouse moves."""
+    global mouse_should_invert, last_mouse_pos, is_inverting_flag
 
-        # desktop capture
-        self.sct = mss.mss()
-        mon = self.sct.monitors[1]  # primary
-        self.mon = {'left': mon['left'], 'top': mon['top'], 'width': mon['width'], 'height': mon['height']}
-        self.screen_w = self.mon['width']
-        self.screen_h = self.mon['height']
+    if is_inverting_flag:
+        return # This move event was generated by our own code, so ignore it
 
-        # webcam
-        self.cap = cv2.VideoCapture(0)
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, WEBCAM_RES[0])
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, WEBCAM_RES[1])
+    # If mouse should be inverted
+    if mouse_should_invert:
+        # Calculate the delta from the last known position
+        dx = x - last_mouse_pos[0]
+        dy = y - last_mouse_pos[1]
 
-        # ear smoothing queue
-        self.ear_queue = deque(maxlen=EYE_FRAMES_SMOOTH)
-        self.smoothed_blend = 1.0  # initial assume eyes open -> blur on startup
+        # Calculate the new inverted position
+        inverted_x = last_mouse_pos[0] - dx
+        inverted_y = last_mouse_pos[1] - dy
+        
+        # Set the flag to prevent recursion
+        is_inverting_flag = True
+        # Move the mouse to the inverted position
+        mouse_controller.position = (inverted_x, inverted_y)
+        is_inverting_flag = False
+        
+        # Update the last position to the new inverted position
+        last_mouse_pos = (inverted_x, inverted_y)
+    else:
+        # If not inverting, just update the last known position
+        last_mouse_pos = (x, y)
 
-        # pre-allocated blurred cache
-        self.last_desktop = None
-        self.last_blurred = None
-        self.last_desktop_ts = 0.0
-        self.blur_down_w = max(2, int(self.screen_w * BLUR_DOWNSCALE))
-        self.blur_down_h = max(2, int(self.screen_h * BLUR_DOWNSCALE))
+# Start the mouse listener
+mouse_listener = mouse.Listener(on_move=on_move)
+mouse_listener.start()
 
-    def start(self, fps=FPS):
-        self.timer = QtCore.QTimer()
-        self.timer.timeout.connect(self.update)
-        self.timer.start(int(1000 / fps))
 
-    def update(self):
-        # 1) capture desktop (always raw)
-        s = self.sct.grab(self.mon)
-        desktop_bgra = np.array(s)  # BGRA
-        desktop_bgr = cv2.cvtColor(desktop_bgra, cv2.COLOR_BGRA2BGR)
+# --- MAIN COMPUTER VISION LOOP ---
+def main():
+    global keyboard_should_scramble, mouse_should_invert
+    
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Error: Cannot open webcam.")
+        return
 
-        # if desktop changed resolution or timestamp, recompute blurred (but we always recompute each frame here)
-        # 2) compute single blurred layer (on downscaled image for perf)
-        small = cv2.resize(desktop_bgr, (self.blur_down_w, self.blur_down_h), interpolation=cv2.INTER_AREA)
-        small_blur = cv2.GaussianBlur(small, GAUSSIAN_KERNEL, 0)
-        # upscale back to full
-        blurred_full = cv2.resize(small_blur, (self.screen_w, self.screen_h), interpolation=cv2.INTER_LINEAR)
+    print("Starting Gaze-Controlled Chaos...")
+    print("Look away from the camera to scramble your keyboard.")
+    print("Look at the camera to invert your mouse.")
+    print("Press 'q' in the OpenCV window to quit.")
 
-        # 3) read webcam frame and compute EAR
-        ret, cam = self.cap.read()
-        if not ret:
-            return
-        cam_h, cam_w = cam.shape[:2]
-        rgb = cv2.cvtColor(cam, cv2.COLOR_BGR2RGB)
-        results = FACE_MESH.process(rgb)
+    while cap.isOpened():
+        success, image = cap.read()
+        if not success:
+            continue
 
-        avg_ear = None
-        face_landmarks_px = None
+        # Flip the image horizontally for a later selfie-view display
+        image = cv2.flip(image, 1)
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = face_mesh.process(image_rgb)
+        
+        img_h, img_w, _ = image.shape
 
         if results.multi_face_landmarks:
-            face_lm = results.multi_face_landmarks[0]
-            landmarks = [(int(p.x * cam_w), int(p.y * cam_h)) for p in face_lm.landmark]
-            face_landmarks_px = landmarks
-            left_ear = eye_aspect_ratio(landmarks, LEFT_EYE_IDX)
-            right_ear = eye_aspect_ratio(landmarks, RIGHT_EYE_IDX)
-            avg_ear = (left_ear + right_ear) / 2.0
-            self.ear_queue.append(avg_ear)
+            # Get landmarks for the first face
+            face_landmarks = results.multi_face_landmarks[0].landmark
+            
+            # --- Gaze Detection Logic ---
+            # Using left eye for gaze detection (landmarks 468-472)
+            # and right eye (landmarks 473-477)
+            
+            # Get pixel coordinates for eye corners and iris centers
+            left_eye_inner_corner = (face_landmarks[133].x * img_w, face_landmarks[133].y * img_h)
+            left_eye_outer_corner = (face_landmarks[33].x * img_w, face_landmarks[33].y * img_h)
+            left_iris_center = (face_landmarks[468].x * img_w, face_landmarks[468].y * img_h)
+
+            right_eye_inner_corner = (face_landmarks[362].x * img_w, face_landmarks[362].y * img_h)
+            right_eye_outer_corner = (face_landmarks[263].x * img_w, face_landmarks[263].y * img_h)
+            right_iris_center = (face_landmarks[473].x * img_w, face_landmarks[473].y * img_h)
+
+            # Calculate horizontal gaze ratio
+            left_eye_width = left_eye_outer_corner[0] - left_eye_inner_corner[0]
+            left_gaze_ratio = (left_iris_center[0] - left_eye_inner_corner[0]) / (left_eye_width + 1e-6)
+            
+            right_eye_width = right_eye_outer_corner[0] - right_eye_inner_corner[0]
+            right_gaze_ratio = (right_iris_center[0] - right_eye_inner_corner[0]) / (right_eye_width + 1e-6)
+            
+            avg_gaze_ratio_x = (left_gaze_ratio + right_gaze_ratio) / 2
+
+            # Basic vertical gaze (less reliable, but good enough for this)
+            eye_top = (face_landmarks[159].y * img_h)
+            eye_bottom = (face_landmarks[145].y * img_h)
+            eye_height = eye_bottom - eye_top
+            vertical_gaze_ratio = (left_iris_center[1] - eye_top) / (eye_height + 1e-6)
+
+            # --- Update State ---
+            # Check if gaze is outside the center "safe zone"
+            if (avg_gaze_ratio_x < 0.5 - GAZE_THRESHOLD_X or 
+                avg_gaze_ratio_x > 0.5 + GAZE_THRESHOLD_X or
+                vertical_gaze_ratio < 0.5 - GAZE_THRESHOLD_Y or
+                vertical_gaze_ratio > 0.5 + GAZE_THRESHOLD_Y):
+                # LOOKING AWAY: Scramble keyboard, normal mouse
+                keyboard_should_scramble = True
+                mouse_should_invert = False
+                status_text = "MODE: KEYBOARD CHAOS"
+                status_color = (0, 0, 255) # Red
+            else:
+                # LOOKING AT SCREEN: Normal keyboard, invert mouse
+                keyboard_should_scramble = False
+                mouse_should_invert = True
+                status_text = "MODE: MOUSE INVERSION"
+                status_color = (0, 255, 0) # Green
         else:
-            # no face -> assume eyes open so maximum blur (put a high EAR)
-            self.ear_queue.append(EAR_MAX)
+            # NO FACE DETECTED: Everything is normal
+            keyboard_should_scramble = False
+            mouse_should_invert = False
+            status_text = "MODE: NORMAL (No face detected)"
+            status_color = (255, 255, 255) # White
 
-        # 4) compute blend factor from EAR
-        # map EAR in [EAR_MIN, EAR_MAX] -> openness in [0,1]
-        recent = list(self.ear_queue)
-        if len(recent) > 0:
-            ear_mean = sum(recent) / len(recent)
-        else:
-            ear_mean = EAR_MAX
+        # --- Display Visual Feedback ---
+        cv2.putText(image, status_text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, status_color, 2)
+        cv2.imshow('Gaze-Controlled Chaos', image)
 
-        # clamp and normalize
-        norm = (ear_mean - EAR_MIN) / (EAR_MAX - EAR_MIN + 1e-8)
-        norm = max(0.0, min(1.0, norm))  # 0 = closed, 1 = wide open
+        if cv2.waitKey(5) & 0xFF == ord('q'):
+            break
 
-        # blur strength = norm (open->more blur). We want value in [0..1]
-        target_blend = norm
+    # --- Cleanup ---
+    print("Stopping listeners and cleaning up...")
+    cap.release()
+    cv2.destroyAllWindows()
+    keyboard_listener.stop()
+    mouse_listener.stop()
+    face_mesh.close()
 
-        # smooth the blend to avoid flicker
-        self.smoothed_blend = SMOOTHING_ALPHA * self.smoothed_blend + (1 - SMOOTHING_ALPHA) * target_blend
-        blend = float(self.smoothed_blend)
-
-        # 5) single-layer blend: blended = blurred * blend + original * (1-blend)
-        blended = cv2.addWeighted(blurred_full, blend, desktop_bgr, 1.0 - blend, 0)
-
-        # 6) draw face mesh and HUD on blended (map webcam landmarks to screen)
-        draw_img = blended
-
-        if face_landmarks_px:
-            # project landmarks roughly from webcam to screen
-            for (lx, ly) in face_landmarks_px:
-                sx = int((lx / cam_w) * self.screen_w)
-                sy = int((ly / cam_h) * self.screen_h)
-                cv2.circle(draw_img, (sx, sy), 1, (0, 255, 255), -1)
-
-            # draw outline, eyes, eyebrows, lips (stylized)
-            def poly_draw(idxs, color=(0, 255, 0), thick=1):
-                pts = [face_landmarks_px[i] for i in idxs]
-                mapped = [(int((x / cam_w) * self.screen_w), int((y / cam_h) * self.screen_h)) for (x, y) in pts]
-                for i in range(len(mapped) - 1):
-                    cv2.line(draw_img, mapped[i], mapped[i + 1], color, thick, cv2.LINE_AA)
-
-            poly_draw(FACE_OUT, (200, 200, 200), 1)
-            poly_draw(LEFT_EYE_IDX, (0, 255, 0), 2)
-            poly_draw(RIGHT_EYE_IDX, (0, 255, 0), 2)
-            poly_draw(LEFT_EYEBROW, (255, 200, 0), 2)
-            poly_draw(RIGHT_EYEBROW, (255, 200, 0), 2)
-            poly_draw(LIPS, (0, 120, 255), 2)
-
-        # 7) small HUD showing blend percentage
-        perc = int(blend * 100)
-        cv2.putText(draw_img, f"Blur: {perc}%", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
-
-        # 8) send final frame to overlay window
-        self.overlay.set_frame(draw_img)
-
-    def stop(self):
-        try:
-            self.cap.release()
-        except Exception:
-            pass
-        try:
-            self.sct.close()
-        except Exception:
-            pass
-        try:
-            FACE_MESH.close()
-        except Exception:
-            pass
-
-def run_app():
-    app = QtWidgets.QApplication(sys.argv)
-    # get screen geometry
-    screen = app.primaryScreen()
-    geom = screen.geometry()
-    overlay = FullOverlay(geom.width(), geom.height())
-    controller = EyeBlurController(overlay)
-    controller.start(FPS)
-
-    # Quit on ESC key (global)
-    def check_escape():
-        # uses OpenCV waitKey for simplicity
-        if cv2.waitKey(1) & 0xFF == 27:
-            controller.stop()
-            QtWidgets.QApplication.quit()
-
-    esc_timer = QtCore.QTimer()
-    esc_timer.timeout.connect(check_escape)
-    esc_timer.start(40)
-
-    sys.exit(app.exec_())
-
-if __name__ == "__main__":
-    run_app()
+if __name__ == '__main__':
+    main()
