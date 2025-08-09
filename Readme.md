@@ -1,47 +1,57 @@
 <img width="3188" height="1202" alt="frame (3)" src="https://github.com/user-attachments/assets/517ad8e9-ad22-457d-9538-a9e62d137cd7" />
 
 
-# [Project Name] 🎯
+# Gravity Falls 🎯
 
 
 ## Basic Details
-### Team Name: [Name]
+### Team Name: X Æ A-12
 
 
 ### Team Members
-- Team Lead: [Name] - [College]
-- Member 2: [Name] - [College]
-- Member 3: [Name] - [College]
+- Team Lead: Sivnand V - SCMS School of Engineering and Technology
 
 ### Project Description
-[2-3 lines about what your project does]
+Biblically and Scientifically accurate Windows
 
 ### The Problem (that doesn't exist)
-[What ridiculous problem are you solving?]
+There was no way any one could visually see how heavy their programs were
 
 ### The Solution (that nobody asked for)
-[How are you solving it? Keep it fun!]
+See how heavy each application youve opened are. Your applications are now under the laws of physics!!
+Each window you open will have a physical property and will be affected by gravity just as any object would and fall down in a scientifically accurate way.
 
 ## Technical Details
 ### Technologies/Components Used
-For Software:
-- [Languages used]
-- [Frameworks used]
-- [Libraries used]
-- [Tools used]
+#### Software Used 
+- Languages used: Python
 
-For Hardware:
-- [List main components]
-- [List specifications]
-- [List tools required]
+- Frameworks used: None
+
+- Libraries used:
+
+        pygetwindow: To find and control application windows.
+
+        threading: To run the simulation loop in the background without freezing other applications.
+
+        ctypes: To interact with the Windows API for getting screen dimensions and checking for administrator rights.
+
+-Tools used:
+
+    A Python interpreter (3.10.11)
+    Visual Studio Code
+    Windows Command Prompt
+    PowerShell
+    Git Bash
 
 ### Implementation
 For Software:
 # Installation
-[commands]
+pip install pygetwindow
 
 # Run
-[commands]
+python gravity.py
+{Run it with admin rights if you are facing any issues}
 
 ### Project Documentation
 For Software:
@@ -60,37 +70,15 @@ For Software:
 ![Workflow](Add your workflow/architecture diagram here)
 *Add caption explaining your workflow*
 
-For Hardware:
-
-# Schematic & Circuit
-![Circuit](Add your circuit diagram here)
-*Add caption explaining connections*
-
-![Schematic](Add your schematic diagram here)
-*Add caption explaining the schematic*
-
-# Build Photos
-![Components](Add photo of your components here)
-*List out all components shown*
-
-![Build](Add photos of build process here)
-*Explain the build steps*
-
-![Final](Add photo of final product here)
-*Explain the final build*
 
 ### Project Demo
 # Video
 [Add your demo video link here]
 *Explain what the video demonstrates*
 
-# Additional Demos
-[Add any extra demo materials/links]
 
 ## Team Contributions
-- [Name 1]: [Specific contributions]
-- [Name 2]: [Specific contributions]
-- [Name 3]: [Specific contributions]
+- Sivnand - Did all the work alone, loneleeeyyyy....
 
 ---
 Made with ❤️ at TinkerHub Useless Projects 
