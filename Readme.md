@@ -57,25 +57,15 @@ python gravity.py
 For Software:
 
 # Screenshots (Add at least 3)
-![Screenshot1](Add screenshot 1 here with proper name)
-*Add caption explaining what this shows*
-
-![Screenshot2](Add screenshot 2 here with proper name)
-*Add caption explaining what this shows*
-
-![Screenshot3](Add screenshot 3 here with proper name)
-*Add caption explaining what this shows*
-
-# Diagrams
-![Workflow](Add your workflow/architecture diagram here)
-*Add caption explaining your workflow*
-
+https://drive.google.com/file/d/1xuwh8A16eD7H8REN71sGx2wPGFjYKtT_/view?usp=drive_link
+https://drive.google.com/file/d/15SUGSNL41iWrtr6XhAqCPtpXDLjAS4PN/view?usp=drive_link
+https://drive.google.com/file/d/1LzmksTLwH7AJTnUMkhYNShGjHIdAn6Xu/view?usp=drive_link
+The objective of the program is to give gravity to application windows, which might not be visible via photos, so please refer to the video attached. What is shown in the pictures are applications windows that are now running by a physics engine falling to the bottom of the screen. 
 
 ### Project Demo
 # Video
-[Add your demo video link here]
-*Explain what the video demonstrates*
-
+https://drive.google.com/file/d/1mfBEdLO2q7F9bDrMWuFjWnTLUfPy35he/view?usp=drive_link
+In this video, when the program runs, all running windows are interpreted as physical objects, they are given a weight, which is run through a physics engine,, calculates the gravity for each element and makes them fall to the ground accordingly. When you take each of the application up and release them, they will follow the tragectory affected by gravity and recoil effect accordingly.
 
 ## Team Contributions
 - Sivnand - Did all the work alone, loneleeeyyyy....
