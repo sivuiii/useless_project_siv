@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/node.dart';
 import '../models/pending_delivery_fragment.dart';
+import '../models/pending_recall_fragment.dart';
 import 'memory_service.dart';
 import 'node_storage_service.dart';
 
@@ -28,12 +29,23 @@ class NodeService {
   final ValueNotifier<List<PendingDeliveryFragment>> pendingDeliveriesNotifier =
       ValueNotifier<List<PendingDeliveryFragment>>([]);
 
+  /// Ephemeral pending recall requests awaiting human node retrieval response
+  final ValueNotifier<List<PendingRecallFragment>> pendingRecallsNotifier =
+      ValueNotifier<List<PendingRecallFragment>>([]);
+
   NodeModel? get currentNode => currentNodeNotifier.value;
 
   /// Resets the current node state (e.g. on sign out or station reset)
   void clear() {
-    currentNodeNotifier.value = null;
-    pendingDeliveriesNotifier.value = [];
+    if (currentNodeNotifier.value != null) {
+      currentNodeNotifier.value = null;
+    }
+    if (pendingDeliveriesNotifier.value.isNotEmpty) {
+      pendingDeliveriesNotifier.value = [];
+    }
+    if (pendingRecallsNotifier.value.isNotEmpty) {
+      pendingRecallsNotifier.value = [];
+    }
     isSyncingNotifier.value = false;
   }
 
@@ -216,6 +228,9 @@ class NodeService {
   /// d. refresh current node telemetry state
   /// e. refresh locally stored fragments
   Future<NodeSyncResult> syncNode() async {
+    // Yield to avoid synchronous state changes during widget build phase
+    await Future.microtask(() {});
+
     final client = _supabase;
     final user = _currentUser;
     if (client == null || user == null) {
@@ -264,6 +279,15 @@ class NodeService {
       pendingDeliveries =
           await MemoryService.instance.fetchPendingDeliveriesForNode();
       pendingDeliveriesNotifier.value = pendingDeliveries;
+
+      // Step c2: fetch pending recall requests waiting for human recall
+      try {
+        final pendingRecalls =
+            await MemoryService.instance.getPendingRecallsForNode();
+        pendingRecallsNotifier.value = pendingRecalls;
+      } catch (recallErr) {
+        debugPrint('PENDING RECALLS WARNING: $recallErr');
+      }
 
       // Step d: refresh current node state
       final node = await getCurrentNode(forceRefresh: true);

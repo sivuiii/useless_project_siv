@@ -6,7 +6,10 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/pending_delivery_fragment.dart';
+import '../models/pending_recall_fragment.dart';
+import '../models/retrieval_status.dart';
 import '../models/stored_node_fragment.dart';
+import '../models/user_stored_memory.dart';
 import 'node_storage_service.dart';
 
 class MemoryStoreResult {
@@ -180,6 +183,107 @@ class MemoryService {
   static String calculateHash(String text) {
     final bytes = utf8.encode(text);
     return sha256.convert(bytes).toString();
+  }
+
+  /// Reconstructs the original message from recalled fragments using the overlapping phrase model.
+  static String reconstructFromFragments(List<String> fragments) {
+    final cleanFragments = fragments
+        .map((f) => f.trim())
+        .where((f) => f.isNotEmpty)
+        .toList();
+
+    if (cleanFragments.isEmpty) return '';
+
+    // If single fragment without '+', return it directly
+    if (cleanFragments.length == 1 && !cleanFragments.first.contains('+')) {
+      return cleanFragments.first;
+    }
+
+    // Check if all fragments have no '+' (e.g. short messages)
+    if (cleanFragments.every((f) => !f.contains('+'))) {
+      return cleanFragments.first;
+    }
+
+    // Parse all fragments into phrase transitions
+    final List<List<String>> parsedFragments = [];
+    for (final frag in cleanFragments) {
+      if (frag.contains('+')) {
+        final parts = frag
+            .split('+')
+            .map((p) => p.trim())
+            .where((p) => p.isNotEmpty)
+            .toList();
+        if (parts.isNotEmpty) {
+          parsedFragments.add(parts);
+        }
+      } else {
+        parsedFragments.add([frag]);
+      }
+    }
+
+    if (parsedFragments.isEmpty) return '';
+
+    // Build directed transition pairs: A -> B
+    final Map<String, Set<String>> forwardTransitions = {};
+    final Map<String, Set<String>> backwardTransitions = {};
+    final Set<String> allPhrases = {};
+
+    for (final parts in parsedFragments) {
+      for (int i = 0; i < parts.length; i++) {
+        allPhrases.add(parts[i]);
+        if (i + 1 < parts.length) {
+          final from = parts[i];
+          final to = parts[i + 1];
+          forwardTransitions.putIfAbsent(from, () => {}).add(to);
+          backwardTransitions.putIfAbsent(to, () => {}).add(from);
+        }
+      }
+    }
+
+    // Seed chain with the first multi-phrase fragment
+    final seedParts = parsedFragments.firstWhere(
+      (p) => p.length >= 2,
+      orElse: () => parsedFragments.first,
+    );
+    final List<String> chain = List<String>.from(seedParts);
+
+    bool changed = true;
+    int iterations = 0;
+    while (changed && iterations < 100) {
+      changed = false;
+      iterations++;
+
+      // Extend tail forward
+      final tail = chain.last;
+      final nextCandidates = forwardTransitions[tail] ?? {};
+      for (final next in nextCandidates) {
+        if (!chain.contains(next)) {
+          chain.add(next);
+          changed = true;
+          break;
+        }
+      }
+
+      // Extend head backward
+      final head = chain.first;
+      final prevCandidates = backwardTransitions[head] ?? {};
+      for (final prev in prevCandidates) {
+        if (!chain.contains(prev)) {
+          chain.insert(0, prev);
+          changed = true;
+          break;
+        }
+      }
+    }
+
+    // Append any isolated phrases that didn't connect
+    for (final phrase in allPhrases) {
+      if (!chain.contains(phrase)) {
+        chain.add(phrase);
+      }
+    }
+
+    return chain.join(' ').replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
   /// Creates a memory record:
@@ -475,5 +579,141 @@ class MemoryService {
       debugPrint('Error getting active memories count: $e');
       return activeMemoriesCountNotifier.value;
     }
+  }
+
+  /// Lists active memories stored by the current user for retrieval selection
+  Future<List<UserStoredMemory>> getUserStoredMemories() async {
+    final client = _supabase;
+    if (client == null || _currentUser == null) return [];
+
+    try {
+      final response = await client.rpc('get_user_stored_memories');
+      final list = (response as List<dynamic>?) ?? [];
+      return list
+          .map((item) => UserStoredMemory.fromMap(Map<String, dynamic>.from(item as Map)))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching user stored memories: $e');
+      return [];
+    }
+  }
+
+  /// Creates or gets an open retrieval request for a stored memory
+  Future<String> initiateMemoryRetrieval(String memoryId) async {
+    final client = _supabase;
+    if (client == null || _currentUser == null) {
+      throw const AuthException('You must be signed in to initiate retrieval.');
+    }
+
+    final trimmed = memoryId.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('Memory ID cannot be empty.');
+    }
+
+    final response = await client.rpc(
+      'initiate_memory_retrieval',
+      params: {'p_memory_id': trimmed},
+    );
+
+    final map = Map<String, dynamic>.from(response as Map);
+    return map['retrieval_id'] as String;
+  }
+
+  /// Fetches the status of a retrieval request and all collected recall responses so far
+  Future<RetrievalStatusResult> getRetrievalStatusAndFragments(String retrievalId) async {
+    final client = _supabase;
+    if (client == null || _currentUser == null) {
+      throw const AuthException('You must be signed in to check retrieval status.');
+    }
+
+    final response = await client.rpc(
+      'get_retrieval_status_and_fragments',
+      params: {'p_retrieval_id': retrievalId},
+    );
+
+    final map = Map<String, dynamic>.from(response as Map);
+    return RetrievalStatusResult.fromMap(map);
+  }
+
+  /// Completes a retrieval session and immediately PURGES all temporary recall plaintext rows from the database
+  Future<void> completeMemoryRetrieval(String retrievalId) async {
+    final client = _supabase;
+    if (client == null || _currentUser == null) return;
+
+    try {
+      await client.rpc(
+        'complete_memory_retrieval',
+        params: {'p_retrieval_id': retrievalId},
+      );
+      debugPrint('RETRIEVAL COMPLETED: Server temporary recall plaintext buffer purged for $retrievalId');
+    } catch (e) {
+      debugPrint('Error completing memory retrieval: $e');
+    }
+  }
+
+  /// Fetches pending recall requests directed to this human node
+  Future<List<PendingRecallFragment>> getPendingRecallsForNode() async {
+    final client = _supabase;
+    if (client == null || _currentUser == null) return [];
+
+    try {
+      final response = await client.rpc('get_pending_recalls_for_node');
+      final list = (response as List<dynamic>?) ?? [];
+      return list
+          .map((item) => PendingRecallFragment.fromMap(Map<String, dynamic>.from(item as Map)))
+          .toList();
+    } catch (e) {
+      debugPrint('Error fetching pending recalls for node: $e');
+      return [];
+    }
+  }
+
+  /// Submits the human node's recalled plaintext:
+  /// 1. Verifies SHA-256 hash server-side.
+  /// 2. Stores temporary transport response row for the owner.
+  /// 3. Retires the assignment on the server to 'recalled' (frees memory slot).
+  /// 4. ONLY upon server acceptance, deletes local metadata record from this node.
+  Future<bool> submitFragmentRecall({
+    required String retrievalId,
+    required String assignmentId,
+    required String fragmentId,
+    required String recalledText,
+  }) async {
+    final client = _supabase;
+    if (client == null || _currentUser == null) {
+      throw const AuthException('Supabase client not initialized or no network connection.');
+    }
+
+    final trimmed = recalledText.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('Recalled plaintext cannot be empty.');
+    }
+
+    debugPrint('SUBMITTING RECALL: Submitting recall for assignment $assignmentId...');
+    final response = await client.rpc(
+      'submit_fragment_recall',
+      params: {
+        'p_retrieval_id': retrievalId,
+        'p_assignment_id': assignmentId,
+        'p_recalled_text': trimmed,
+      },
+    ).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () {
+        throw TimeoutException('Server timed out while submitting fragment recall.');
+      },
+    );
+
+    final map = Map<String, dynamic>.from(response as Map);
+    if (map['success'] != true) {
+      throw StateError('Server rejected recall submission: ${map['message']}');
+    }
+
+    // Server accepted recall and marked assignment 'recalled'
+    // Step 2: Purge local metadata from this station (frees slot in UI)
+    await NodeStorageService.instance.deleteFragment(fragmentId);
+    debugPrint('RECALL COMPLETE: Fragment $fragmentId forgotten locally (slot freed).');
+
+    return true;
   }
 }

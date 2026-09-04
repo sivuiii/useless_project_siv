@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../models/mock_data.dart';
 import '../models/node.dart';
 import '../models/pending_delivery_fragment.dart';
+import '../models/pending_recall_fragment.dart';
 import '../models/stored_node_fragment.dart';
 import '../services/node_service.dart';
 import '../services/node_storage_service.dart';
@@ -11,6 +12,7 @@ import '../theme/app_theme.dart';
 import '../widgets/calibration_dial.dart';
 import '../widgets/max_width_container.dart';
 import '../widgets/memorization_dialog.dart';
+import '../widgets/recall_submission_dialog.dart';
 import '../widgets/stat_card.dart';
 
 class NodeScreen extends StatefulWidget {
@@ -29,6 +31,10 @@ class _NodeScreenState extends State<NodeScreen> {
     NodeStorageService.instance.getStoredFragments();
     NodeService.instance.syncNode().then((result) async {
       if (!mounted) return;
+      if (NodeService.instance.pendingRecallsNotifier.value.isNotEmpty) {
+        _promptRecall(NodeService.instance.pendingRecallsNotifier.value.first);
+        return;
+      }
       if (result.pendingDeliveries.isNotEmpty) {
         final first = result.pendingDeliveries.first;
         if (!NodeStorageService.instance.isCapacityFull &&
@@ -39,6 +45,35 @@ class _NodeScreenState extends State<NodeScreen> {
         }
       }
     });
+  }
+
+  Future<void> _promptRecall(PendingRecallFragment recall) async {
+    if (!mounted) return;
+    RecallSubmissionDialog.show(
+      context,
+      recall: recall,
+      onSuccess: () {
+        final updated = List<PendingRecallFragment>.from(
+            NodeService.instance.pendingRecallsNotifier.value)
+          ..removeWhere((r) => r.assignmentId == recall.assignmentId);
+        NodeService.instance.pendingRecallsNotifier.value = updated;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'FRAGMENT RECALLED! HOSTED MEMORY SLOT FREED.',
+              style: GoogleFonts.spaceMono(fontSize: 11),
+            ),
+            backgroundColor: AppTheme.signalOnline,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+
+        if (updated.isNotEmpty && mounted) {
+          _promptRecall(updated.first);
+        }
+      },
+    );
   }
 
   Future<void> _promptMemorization(PendingDeliveryFragment delivery) async {
@@ -85,12 +120,15 @@ class _NodeScreenState extends State<NodeScreen> {
   Future<void> _handleManualSync() async {
     final result = await NodeService.instance.syncNode();
     if (mounted) {
+      final recallCount = NodeService.instance.pendingRecallsNotifier.value.length;
       final msg = result.isSuccess
-          ? (result.pendingDeliveries.isNotEmpty
-              ? 'SYNC: ${result.pendingDeliveries.length} FRAGMENT(S) AWAITING MEMORIZATION'
-              : (result.rebalancedCount > 0
-                  ? 'SYNC: ${result.rebalancedCount} FRAGMENT(S) REBALANCED TO THIS STATION'
-                  : 'STATION TELEMETRY UP TO DATE (${result.storedCount} MEMORIZED)'))
+          ? (recallCount > 0
+              ? 'SYNC: $recallCount RECALL SIGNAL(S) PENDING'
+              : (result.pendingDeliveries.isNotEmpty
+                  ? 'SYNC: ${result.pendingDeliveries.length} FRAGMENT(S) AWAITING MEMORIZATION'
+                  : (result.rebalancedCount > 0
+                      ? 'SYNC: ${result.rebalancedCount} FRAGMENT(S) REBALANCED TO THIS STATION'
+                      : 'STATION TELEMETRY UP TO DATE (${result.storedCount} MEMORIZED)')))
           : 'SYNC ERROR: ${result.error}';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -101,7 +139,9 @@ class _NodeScreenState extends State<NodeScreen> {
         ),
       );
 
-      if (result.pendingDeliveries.isNotEmpty) {
+      if (NodeService.instance.pendingRecallsNotifier.value.isNotEmpty) {
+        _promptRecall(NodeService.instance.pendingRecallsNotifier.value.first);
+      } else if (result.pendingDeliveries.isNotEmpty) {
         final first = result.pendingDeliveries.first;
         if (!NodeStorageService.instance.isCapacityFull &&
             !(await NodeStorageService.instance.hasFragment(first.fragmentId))) {
@@ -431,6 +471,72 @@ class _NodeScreenState extends State<NodeScreen> {
 
                         const SizedBox(height: 20),
 
+                        // Pending Recalls Banner
+                        ValueListenableBuilder<List<PendingRecallFragment>>(
+                          valueListenable: NodeService.instance.pendingRecallsNotifier,
+                          builder: (context, pendingRecalls, _) {
+                            if (pendingRecalls.isEmpty) return const SizedBox.shrink();
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceElevated,
+                                borderRadius: BorderRadius.circular(2),
+                                border: Border.all(color: AppTheme.signalWarning, width: 1.0),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.output_rounded,
+                                    color: AppTheme.signalWarning,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${pendingRecalls.length} RECALL SIGNAL(S) PENDING',
+                                          style: GoogleFonts.inter(
+                                            color: AppTheme.textPrimary,
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 1),
+                                        Text(
+                                          'Memory owner requests fragment recall.',
+                                          style: GoogleFonts.inter(
+                                            color: AppTheme.textMuted,
+                                            fontSize: 10.5,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  ElevatedButton(
+                                    onPressed: () => _promptRecall(pendingRecalls.first),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppTheme.signalWarning,
+                                      foregroundColor: Colors.black,
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    ),
+                                    child: Text(
+                                      'RECALL',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+
                         // Pending Deliveries Banner
                         ValueListenableBuilder<List<PendingDeliveryFragment>>(
                           valueListenable: NodeService.instance.pendingDeliveriesNotifier,
@@ -621,6 +727,9 @@ class _NodeScreenState extends State<NodeScreen> {
                                 ] else ...[
                                   ...storedFragments.map((frag) => _buildRealFragmentCard(frag)),
                                 ],
+
+                                const SizedBox(height: 20),
+                                _buildDevControls(context, storedFragments.length),
                               ],
                             );
                           },
@@ -633,6 +742,193 @@ class _NodeScreenState extends State<NodeScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _confirmAndClearLocalMemory() async {
+    final count = NodeStorageService.instance.activeHostedCount;
+    final shouldClear = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(4),
+          side: const BorderSide(color: AppTheme.border, width: 1),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.delete_sweep_outlined, color: AppTheme.signalWarning, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'CLEAR LOCAL MEMORY?',
+              style: GoogleFonts.spaceMono(
+                color: AppTheme.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'This development action clears ONLY the local metadata cache ($count item(s)) tracked on this device.',
+              style: GoogleFonts.inter(
+                color: AppTheme.textSecondary,
+                fontSize: 12,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceElevated,
+                borderRadius: BorderRadius.circular(2),
+                border: Border.all(color: AppTheme.border),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildBulletPoint('Remote Supabase memories & database remain untouched.'),
+                  _buildBulletPoint('Your operator authentication account is preserved.'),
+                  _buildBulletPoint('Station ledger resets immediately to 0 / 5 slots used.'),
+                  _buildBulletPoint('Stale pending delivery queues will be cleared.'),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(
+              'CANCEL',
+              style: GoogleFonts.spaceMono(
+                color: AppTheme.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.signalWarning.withValues(alpha: 0.15),
+              foregroundColor: AppTheme.signalWarning,
+              side: const BorderSide(color: AppTheme.signalWarning, width: 0.8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            ),
+            child: Text(
+              'CONFIRM & CLEAR',
+              style: GoogleFonts.spaceMono(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldClear == true && mounted) {
+      await NodeStorageService.instance.clearAllMetadata();
+      NodeService.instance.pendingDeliveriesNotifier.value = [];
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'LOCAL MEMORY CLEARED (0 / 5 SLOTS USED). SUPABASE DATA UNTOUCHED.',
+              style: GoogleFonts.spaceMono(fontSize: 11),
+            ),
+            backgroundColor: AppTheme.signalOnline,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  Widget _buildBulletPoint(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('• ', style: GoogleFonts.spaceMono(color: AppTheme.brassAccent, fontSize: 11)),
+          Expanded(
+            child: Text(
+              text,
+              style: GoogleFonts.inter(color: AppTheme.textMuted, fontSize: 11, height: 1.3),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDevControls(BuildContext context, int fragmentCount) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceElevated,
+        borderRadius: BorderRadius.circular(3),
+        border: Border.all(color: AppTheme.border, width: 0.8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.build_outlined, size: 14, color: AppTheme.textMuted),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'STATION MAINTENANCE & TESTING',
+                  style: GoogleFonts.inter(
+                    color: AppTheme.textMuted,
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Development action: Clears local cached metadata from this station. Useful when resetting the test database to realign local capacity telemetry.',
+            style: GoogleFonts.inter(
+              color: AppTheme.textSecondary,
+              fontSize: 11,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            key: const Key('clear_local_memory_button'),
+            onPressed: _confirmAndClearLocalMemory,
+            icon: const Icon(Icons.cleaning_services_rounded, size: 14, color: AppTheme.signalWarning),
+            label: Text(
+              'CLEAR LOCAL MEMORY',
+              style: GoogleFonts.spaceMono(
+                color: AppTheme.signalWarning,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: BorderSide(color: AppTheme.signalWarning.withValues(alpha: 0.5), width: 0.8),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -3,15 +3,18 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:human_server/models/pending_delivery_fragment.dart';
+import 'package:human_server/models/pending_recall_fragment.dart';
 import 'package:human_server/models/stored_node_fragment.dart';
 import 'package:human_server/screens/auth_screen.dart';
 import 'package:human_server/screens/main_screen.dart';
 import 'package:human_server/screens/node_screen.dart';
+import 'package:human_server/screens/retrieve_screen.dart';
 import 'package:human_server/screens/store_screen.dart';
 import 'package:human_server/services/memory_service.dart';
 import 'package:human_server/services/node_storage_service.dart';
 import 'package:human_server/theme/app_theme.dart';
 import 'package:human_server/widgets/memorization_dialog.dart';
+import 'package:human_server/widgets/recall_submission_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -451,6 +454,106 @@ void main() {
       // Verify slot usage and station full banner are rendered
       expect(find.text('5 / 5 MEMORY SLOTS USED'), findsOneWidget);
       expect(find.textContaining('STATION FULL (5/5 SLOTS)'), findsOneWidget);
+    });
+
+    test('clearAllMetadata clears local metadata records and resets capacity to 0/5', () async {
+      // Simulate over-capacity test state (17 fragments)
+      for (int i = 1; i <= 17; i++) {
+        await NodeStorageService.instance.saveFragment(
+          StoredNodeFragment(
+            fragmentId: 'frag-reset-$i',
+            memoryId: 'mem-reset',
+            sequenceNumber: i,
+            sizeBytes: 20,
+            receivedAt: DateTime.now(),
+            expiresAt: DateTime.now().add(const Duration(days: 180)),
+            assignmentId: 'assign-reset-$i',
+            verificationHash: 'hash-$i',
+          ),
+        );
+      }
+
+      expect(NodeStorageService.instance.activeHostedCount, 17);
+      expect(NodeStorageService.instance.isOverCapacity, isTrue);
+      expect(NodeStorageService.instance.canReceiveFragment, isFalse);
+
+      // Perform local clear
+      await NodeStorageService.instance.clearAllMetadata();
+
+      // Invariant: local cache is empty, capacity resets to 0 / 5
+      expect(NodeStorageService.instance.activeHostedCount, 0);
+      expect(NodeStorageService.instance.isCapacityFull, isFalse);
+      expect(NodeStorageService.instance.isOverCapacity, isFalse);
+      expect(NodeStorageService.instance.canReceiveFragment, isTrue);
+      expect(NodeStorageService.instance.remainingSlots, 5);
+
+      final fragments = await NodeStorageService.instance.getStoredFragments();
+      expect(fragments, isEmpty);
+    });
+
+    testWidgets('NodeScreen clear local memory requires confirmation dialog and resets slots to 0/5', (WidgetTester tester) async {
+      tester.binding.setSurfaceSize(const Size(1000, 1400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      // Simulate 17 fragments
+      for (int i = 1; i <= 17; i++) {
+        await NodeStorageService.instance.saveFragment(
+          StoredNodeFragment(
+            fragmentId: 'frag-dev-$i',
+            memoryId: 'mem-dev',
+            sequenceNumber: i,
+            sizeBytes: 15,
+            receivedAt: DateTime.now(),
+            expiresAt: DateTime.now().add(const Duration(days: 180)),
+            assignmentId: 'assign-dev-$i',
+            verificationHash: 'hash-$i',
+          ),
+        );
+      }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: const Scaffold(body: NodeScreen()),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('17 / 5 MEMORY SLOTS USED'), findsOneWidget);
+      expect(find.byKey(const Key('clear_local_memory_button')), findsOneWidget);
+
+      // Scroll to clear local memory button if needed and tap it
+      await tester.scrollUntilVisible(find.byKey(const Key('clear_local_memory_button')), 200);
+      await tester.tap(find.byKey(const Key('clear_local_memory_button')));
+      await tester.pumpAndSettle();
+
+      // Verify confirmation dialog is presented
+      expect(find.text('CLEAR LOCAL MEMORY?'), findsOneWidget);
+      expect(find.textContaining('This development action clears ONLY the local metadata cache (17 item(s))'), findsOneWidget);
+      expect(find.text('CANCEL'), findsOneWidget);
+      expect(find.text('CONFIRM & CLEAR'), findsOneWidget);
+
+      // Tap CANCEL first
+      await tester.tap(find.text('CANCEL'));
+      await tester.pumpAndSettle();
+
+      // State is preserved
+      expect(find.text('CLEAR LOCAL MEMORY?'), findsNothing);
+      expect(NodeStorageService.instance.activeHostedCount, 17);
+      expect(find.text('17 / 5 MEMORY SLOTS USED'), findsOneWidget);
+
+      // Tap CLEAR LOCAL MEMORY again, then tap CONFIRM & CLEAR
+      await tester.tap(find.byKey(const Key('clear_local_memory_button')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('CONFIRM & CLEAR'));
+      await tester.pumpAndSettle();
+
+      // Invariant: local memory is wiped, immediately reflects 0 / 5 MEMORY SLOTS USED
+      expect(NodeStorageService.instance.activeHostedCount, 0);
+      expect(find.text('0 / 5 MEMORY SLOTS USED'), findsOneWidget);
+      expect(find.text('No Fragments Memorized Yet'), findsOneWidget);
+      expect(find.textContaining('LOCAL MEMORY CLEARED (0 / 5 SLOTS USED)'), findsOneWidget);
     });
   });
 
