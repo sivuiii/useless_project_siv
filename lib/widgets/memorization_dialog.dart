@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/pending_delivery_fragment.dart';
 import '../services/memory_service.dart';
@@ -43,6 +46,24 @@ class _MemorizationDialogState extends State<MemorizationDialog> {
   bool _isConfirming = false;
   String? _errorMessage;
 
+  String _formatError(dynamic error) {
+    if (error is TimeoutException) {
+      return error.message ??
+          'Confirmation request timed out. The server did not respond in time.';
+    }
+    if (error is PostgrestException) {
+      if (error.message.isNotEmpty) {
+        return error.message;
+      }
+      return 'Database error (${error.code}): ${error.details ?? error.toString()}';
+    }
+    return error
+        .toString()
+        .replaceFirst('Exception: ', '')
+        .replaceFirst('StateError: ', '')
+        .replaceFirst('ArgumentError: ', '');
+  }
+
   Future<void> _handleMemorized() async {
     if (_isConfirming) return;
     setState(() {
@@ -53,14 +74,23 @@ class _MemorizationDialogState extends State<MemorizationDialog> {
     try {
       await MemoryService.instance.confirmMemorizedFragment(widget.delivery);
       if (mounted) {
-        widget.onMemorized();
+        // Pop dialog first, then notify onMemorized to avoid nested dialog navigation conflicts
         Navigator.of(context).pop();
+        widget.onMemorized();
       }
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('Memorization confirmation error: $e\n$stack');
       if (mounted) {
         setState(() {
           _isConfirming = false;
-          _errorMessage = 'Failed to confirm memorization: $e';
+          _errorMessage = _formatError(e);
+        });
+      }
+    } finally {
+      // Safety guarantee: under NO condition can _isConfirming remain true indefinitely
+      if (mounted && _isConfirming) {
+        setState(() {
+          _isConfirming = false;
         });
       }
     }
@@ -83,16 +113,13 @@ class _MemorizationDialogState extends State<MemorizationDialog> {
           constraints: const BoxConstraints(maxWidth: 520),
           decoration: BoxDecoration(
             color: AppTheme.surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: AppTheme.primary.withValues(alpha: 0.6),
-              width: 1.5,
-            ),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: AppTheme.border, width: 1.0),
             boxShadow: [
               BoxShadow(
-                color: AppTheme.primary.withValues(alpha: 0.2),
-                blurRadius: 24,
-                spreadRadius: 2,
+                color: Colors.black.withValues(alpha: 0.7),
+                blurRadius: 20,
+                spreadRadius: 4,
               ),
             ],
           ),
@@ -103,35 +130,34 @@ class _MemorizationDialogState extends State<MemorizationDialog> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Top icon & badge
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(10),
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: AppTheme.primary.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
+                          color: AppTheme.surfaceElevated,
+                          border: Border.all(color: AppTheme.border),
+                          borderRadius: BorderRadius.circular(4),
                         ),
                         child: const Icon(
                           Icons.psychology_rounded,
-                          color: AppTheme.primary,
-                          size: 28,
+                          color: AppTheme.brassAccent,
+                          size: 22,
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: AppTheme.surfaceLight,
-                          borderRadius: BorderRadius.circular(20),
+                          color: AppTheme.surfaceElevated,
+                          borderRadius: BorderRadius.circular(3),
                           border: Border.all(color: AppTheme.border),
                         ),
                         child: Text(
-                          'Seq #${frag.sequenceNumber}',
-                          style: const TextStyle(
-                            color: AppTheme.primaryLight,
-                            fontSize: 12,
+                          'SEQ #${frag.sequenceNumber}',
+                          style: GoogleFonts.spaceMono(
+                            color: AppTheme.brassAccent,
+                            fontSize: 11,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -140,39 +166,34 @@ class _MemorizationDialogState extends State<MemorizationDialog> {
                   ),
                   const SizedBox(height: 14),
 
-                  // Title
-                  const Text(
-                    'Memory Entrusted to You',
-                    style: TextStyle(
+                  Text(
+                    'MEMORY ENTRUSTED TO YOUR BIOLOGICAL VAULT',
+                    style: GoogleFonts.playfairDisplay(
                       color: AppTheme.textPrimary,
-                      fontSize: 20,
+                      fontSize: 18,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 6),
 
-                  // Explanation
-                  const Text(
-                    'You are serving as a Human Server node. The human brain is the permanent storage for this memory replica. Read and memorize the entrusted text below carefully.',
-                    style: TextStyle(
+                  Text(
+                    'You are serving as a station node. The human brain is the permanent biological storage device. Read and memorize the entrusted plaintext payload below.',
+                    style: GoogleFonts.inter(
                       color: AppTheme.textSecondary,
-                      fontSize: 13,
+                      fontSize: 12,
                       height: 1.4,
                     ),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 16),
 
-                  // Ephemeral Plaintext Box
+                  // Ephemeral Parchment Slip Box
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: AppTheme.background,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppTheme.secondary.withValues(alpha: 0.5),
-                        width: 1.2,
-                      ),
+                      color: AppTheme.parchment,
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(color: AppTheme.ink.withValues(alpha: 0.15), width: 1.0),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -182,17 +203,16 @@ class _MemorizationDialogState extends State<MemorizationDialog> {
                           children: [
                             Text(
                               'FRAG-$shortFragId',
-                              style: const TextStyle(
-                                color: AppTheme.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                fontFamily: 'monospace',
+                              style: GoogleFonts.spaceMono(
+                                color: AppTheme.ink,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
                             Text(
                               '${frag.sizeBytes} BYTES',
-                              style: const TextStyle(
-                                color: AppTheme.textMuted,
+                              style: GoogleFonts.spaceMono(
+                                color: AppTheme.inkFaded,
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
                               ),
@@ -202,12 +222,11 @@ class _MemorizationDialogState extends State<MemorizationDialog> {
                         const SizedBox(height: 10),
                         SelectableText(
                           frag.payloadText,
-                          style: const TextStyle(
-                            color: AppTheme.textPrimary,
+                          style: GoogleFonts.courierPrime(
+                            color: AppTheme.ink,
                             fontSize: 15,
-                            fontFamily: 'monospace',
                             height: 1.5,
-                            fontWeight: FontWeight.w500,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
                       ],
@@ -215,12 +234,11 @@ class _MemorizationDialogState extends State<MemorizationDialog> {
                   ),
                   const SizedBox(height: 14),
 
-                  // Security & Ephemeral Note
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: AppTheme.surfaceLight,
-                      borderRadius: BorderRadius.circular(8),
+                      color: AppTheme.surfaceElevated,
+                      borderRadius: BorderRadius.circular(2),
                       border: Border.all(color: AppTheme.border),
                     ),
                     child: Row(
@@ -229,13 +247,13 @@ class _MemorizationDialogState extends State<MemorizationDialog> {
                         const Icon(
                           Icons.lock_clock_outlined,
                           size: 16,
-                          color: AppTheme.warning,
+                          color: AppTheme.signalWarning,
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            'Upon tapping MEMORIZED, this text is permanently erased from your device and the network transport buffer. Expiry: $expiresStr.',
-                            style: const TextStyle(
+                            'Upon tapping MEMORIZED, this plaintext is permanently erased from RAM and transport buffers. Expiry: $expiresStr.',
+                            style: GoogleFonts.inter(
                               color: AppTheme.textMuted,
                               fontSize: 11,
                               height: 1.3,
@@ -248,40 +266,59 @@ class _MemorizationDialogState extends State<MemorizationDialog> {
 
                   if (_errorMessage != null) ...[
                     const SizedBox(height: 12),
-                    Text(
-                      _errorMessage!,
-                      style: const TextStyle(
-                        color: AppTheme.error,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.signalOffline.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: AppTheme.signalOffline.withValues(alpha: 0.45),
+                          width: 1.0,
+                        ),
                       ),
-                      textAlign: TextAlign.center,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            size: 16,
+                            color: AppTheme.signalOffline,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _errorMessage!,
+                              style: GoogleFonts.spaceMono(
+                                color: AppTheme.signalOffline,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                height: 1.3,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
 
                   const SizedBox(height: 20),
 
-                  // Actions
                   Row(
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: _isConfirming
-                              ? null
-                              : () => Navigator.of(context).pop(),
+                          onPressed: _isConfirming ? null : () => Navigator.of(context).pop(),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             side: const BorderSide(color: AppTheme.border),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                           ),
-                          child: const Text(
-                            'Memorize Later',
-                            style: TextStyle(
+                          child: Text(
+                            'MEMORIZE LATER',
+                            style: GoogleFonts.inter(
                               color: AppTheme.textSecondary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
@@ -292,33 +329,38 @@ class _MemorizationDialogState extends State<MemorizationDialog> {
                         child: ElevatedButton(
                           onPressed: _isConfirming ? null : _handleMemorized,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.primary,
+                            backgroundColor: AppTheme.surfaceElevated,
+                            foregroundColor: AppTheme.brassAccent,
+                            side: const BorderSide(color: AppTheme.borderSubtle, width: 1.0),
                             padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            elevation: 2,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                           ),
                           child: _isConfirming
                               ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
+                                  width: 16,
+                                  height: 16,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: Colors.white,
+                                    color: AppTheme.brassAccent,
                                   ),
                                 )
-                              : const Row(
+                              : Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
-                                    Icon(Icons.check_circle_outline, size: 18),
-                                    SizedBox(width: 6),
+                                    Icon(
+                                      _errorMessage != null
+                                          ? Icons.refresh_rounded
+                                          : Icons.check_circle_outline,
+                                      size: 16,
+                                    ),
+                                    const SizedBox(width: 6),
                                     Text(
-                                      'MEMORIZED',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w800,
+                                      _errorMessage != null
+                                          ? 'RETRY CONFIRMATION'
+                                          : 'CONFIRM MEMORIZED',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
                                         letterSpacing: 0.5,
                                       ),
                                     ),

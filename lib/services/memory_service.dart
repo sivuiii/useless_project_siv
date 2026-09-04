@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
@@ -318,18 +319,46 @@ class MemoryService {
   }
 
   /// Confirms that the human user has read and memorized the fragment.
-  /// 1. Saves fragment METADATA ONLY to local storage (zero plaintext persisted).
-  /// 2. Calls Supabase confirm_fragment_receipt to mark fulfilled and delete transport inbox copy.
-  /// 3. Wipes the ephemeral plaintext from client memory.
+  /// 
+  /// [Crucial Invariant - Order of Operations]:
+  /// 1. Calls Supabase confirm_fragment_receipt to mark memorized/fulfilled and delete transport inbox copy.
+  /// 2. Only upon successful server confirmation, persists fragment METADATA ONLY to local storage (zero plaintext persisted).
+  /// 3. Only upon successful server confirmation, wipes the ephemeral plaintext from client memory.
+  /// Plaintext is NEVER cleared and local metadata is NEVER stored before successful server receipt confirmation.
   Future<void> confirmMemorizedFragment(PendingDeliveryFragment delivery) async {
     final client = _supabase;
     if (client == null) {
-      throw Exception('Supabase client not initialized');
+      throw const AuthException('Supabase client not initialized or no network connection.');
     }
 
-    final actualHash = calculateHash(delivery.payloadText);
+    if (delivery.assignmentId.trim().isEmpty) {
+      throw ArgumentError('Invalid delivery: assignmentId cannot be empty.');
+    }
 
-    // 1. Save metadata ONLY to NodeStorageService (NO plaintext)
+    // Step 1: Confirm receipt on Supabase first (marks memorized/fulfilled and purges server transport plaintext).
+    // Uses a 15-second timeout to prevent the UI from hanging indefinitely in a loading state.
+    debugPrint('RECEIPT CONFIRMATION: Calling confirm_fragment_receipt for assignment ${delivery.assignmentId}...');
+    final response = await client.rpc(
+      'confirm_fragment_receipt',
+      params: {'p_assignment_id': delivery.assignmentId},
+    ).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () {
+        throw TimeoutException(
+          'Confirmation request timed out after 15 seconds. The server did not respond.',
+        );
+      },
+    );
+
+    if (response != true) {
+      throw StateError(
+        'Server failed to confirm fragment receipt (server response: $response).',
+      );
+    }
+    debugPrint('RECEIPT CONFIRMED: Assignment ${delivery.assignmentId} confirmed, server transport inbox row deleted');
+
+    // Step 2: ONLY upon successful server confirmation, persist metadata ONLY (no plaintext)
+    final actualHash = calculateHash(delivery.payloadText);
     final storedMeta = StoredNodeFragment(
       fragmentId: delivery.fragmentId,
       memoryId: delivery.memoryId,
@@ -347,14 +376,7 @@ class MemoryService {
     await NodeStorageService.instance.saveFragment(storedMeta);
     debugPrint('METADATA SAVED: Fragment ${delivery.fragmentId} metadata stored locally (no plaintext)');
 
-    // 2. Confirm receipt on Supabase: marks fulfilled and purges transport plaintext
-    await client.rpc(
-      'confirm_fragment_receipt',
-      params: {'p_assignment_id': delivery.assignmentId},
-    );
-    debugPrint('RECEIPT CONFIRMED: Assignment ${delivery.assignmentId} fulfilled, server transport inbox row deleted');
-
-    // 3. Immediately wipe plaintext from client application memory
+    // Step 3: ONLY upon successful server confirmation, wipe ephemeral plaintext from RAM
     delivery.clear();
     debugPrint('MEMORY WIPED: Ephemeral plaintext cleared from device memory for fragment ${delivery.fragmentId}');
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/auth_service.dart';
@@ -62,7 +63,6 @@ class _AuthScreenState extends State<AuthScreen> {
           email: email,
           password: password,
         );
-        // AuthGate will automatically detect the new session and navigate
       } else {
         final response = await AuthService.instance.signUp(
           email: email,
@@ -70,7 +70,6 @@ class _AuthScreenState extends State<AuthScreen> {
         );
 
         if (response.session == null && response.user != null) {
-          // Email confirmation is required on the Supabase project
           setState(() {
             _successMessage =
                 'Confirmation email sent to $email. Please verify your email before logging in.';
@@ -79,7 +78,6 @@ class _AuthScreenState extends State<AuthScreen> {
             _confirmPasswordController.clear();
           });
         }
-        // If session is returned immediately, AuthGate will route to MainScreen
       }
     } on AuthException catch (e) {
       setState(() {
@@ -118,66 +116,66 @@ class _AuthScreenState extends State<AuthScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: AppTheme.primary.withValues(alpha: 0.12),
+                        color: AppTheme.surfaceElevated,
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: AppTheme.primary.withValues(alpha: 0.3),
-                          width: 1.5,
+                          color: AppTheme.borderSubtle,
+                          width: 1.0,
                         ),
                       ),
                       child: const Icon(
                         Icons.hub_rounded,
-                        color: AppTheme.primaryLight,
-                        size: 36,
+                        color: AppTheme.brassAccent,
+                        size: 32,
                       ),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Center(
+                  Center(
                     child: Text(
-                      'Human Server',
-                      style: TextStyle(
+                      'HUMAN SERVER',
+                      style: GoogleFonts.playfairDisplay(
                         color: AppTheme.textPrimary,
                         fontSize: 24,
                         fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5,
+                        letterSpacing: 1.5,
                       ),
                     ),
                   ),
                   const SizedBox(height: 6),
-                  const Center(
+                  Center(
                     child: Text(
-                      'Decentralized Human Memory Network',
-                      style: TextStyle(
-                        color: AppTheme.textSecondary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
+                      'STATION OPERATOR AUTHENTICATION',
+                      style: GoogleFonts.inter(
+                        color: AppTheme.textMuted,
+                        fontSize: 11,
+                        letterSpacing: 0.5,
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 28),
 
                   // Mode Selector Tabs
                   Container(
-                    padding: const EdgeInsets.all(4),
+                    padding: const EdgeInsets.all(3),
                     decoration: BoxDecoration(
                       color: AppTheme.surface,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(4),
                       border: Border.all(color: AppTheme.border),
                     ),
                     child: Row(
                       children: [
                         Expanded(
                           child: _buildModeTab(
-                            title: 'Sign In',
+                            title: 'AUTHENTICATE',
                             isSelected: isSignIn,
                             onTap: () => _switchMode(AuthMode.signIn),
                           ),
                         ),
                         Expanded(
                           child: _buildModeTab(
-                            title: 'Create Node',
+                            title: 'REGISTER STATION',
                             isSelected: !isSignIn,
                             onTap: () => _switchMode(AuthMode.signUp),
                           ),
@@ -186,34 +184,32 @@ class _AuthScreenState extends State<AuthScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
 
                   // Success Message Banner
                   if (_successMessage != null) ...[
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: AppTheme.secondary.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: AppTheme.secondary.withValues(alpha: 0.4),
-                        ),
+                        color: AppTheme.surfaceElevated,
+                        borderRadius: BorderRadius.circular(2),
+                        border: Border.all(color: AppTheme.signalOnline),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Icon(
                             Icons.check_circle_rounded,
-                            color: AppTheme.secondary,
-                            size: 20,
+                            color: AppTheme.signalOnline,
+                            size: 18,
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               _successMessage!,
-                              style: const TextStyle(
-                                color: AppTheme.secondary,
-                                fontSize: 13,
+                              style: GoogleFonts.spaceMono(
+                                color: AppTheme.signalOnline,
+                                fontSize: 11,
                                 height: 1.3,
                               ),
                             ),
@@ -229,27 +225,25 @@ class _AuthScreenState extends State<AuthScreen> {
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: AppTheme.error.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: AppTheme.error.withValues(alpha: 0.4),
-                        ),
+                        color: AppTheme.surfaceElevated,
+                        borderRadius: BorderRadius.circular(2),
+                        border: Border.all(color: AppTheme.signalOffline),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Icon(
                             Icons.error_outline_rounded,
-                            color: AppTheme.error,
-                            size: 20,
+                            color: AppTheme.signalOffline,
+                            size: 18,
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
                               _errorMessage!,
-                              style: const TextStyle(
-                                color: AppTheme.error,
-                                fontSize: 13,
+                              style: GoogleFonts.spaceMono(
+                                color: AppTheme.signalOffline,
+                                fontSize: 11,
                                 height: 1.3,
                               ),
                             ),
@@ -265,8 +259,8 @@ class _AuthScreenState extends State<AuthScreen> {
                     padding: const EdgeInsets.all(22),
                     decoration: BoxDecoration(
                       color: AppTheme.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.border),
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(color: AppTheme.border, width: 1.0),
                     ),
                     child: Form(
                       key: _formKey,
@@ -274,13 +268,13 @@ class _AuthScreenState extends State<AuthScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Email Field
-                          const Text(
-                            'NODE EMAIL ADDRESS',
-                            style: TextStyle(
+                          Text(
+                            'OPERATOR EMAIL IDENTIFIER',
+                            style: GoogleFonts.inter(
                               color: AppTheme.textMuted,
                               fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.8,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -288,16 +282,16 @@ class _AuthScreenState extends State<AuthScreen> {
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
                             autocorrect: false,
-                            style: const TextStyle(
+                            style: GoogleFonts.inter(
                               color: AppTheme.textPrimary,
-                              fontSize: 14,
+                              fontSize: 13,
                             ),
                             decoration: const InputDecoration(
-                              hintText: 'user@example.com',
+                              hintText: 'operator@humanserver.net',
                               prefixIcon: Icon(
                                 Icons.email_outlined,
                                 color: AppTheme.textMuted,
-                                size: 20,
+                                size: 18,
                               ),
                             ),
                             validator: (value) {
@@ -316,31 +310,29 @@ class _AuthScreenState extends State<AuthScreen> {
                           const SizedBox(height: 18),
 
                           // Password Field
-                          const Text(
-                            'PASSWORD',
-                            style: TextStyle(
+                          Text(
+                            'ACCESS KEY PASSPHRASE',
+                            style: GoogleFonts.inter(
                               color: AppTheme.textMuted,
                               fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.8,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
                             ),
                           ),
                           const SizedBox(height: 8),
                           TextFormField(
                             controller: _passwordController,
                             obscureText: _obscurePassword,
-                            style: const TextStyle(
+                            style: GoogleFonts.inter(
                               color: AppTheme.textPrimary,
-                              fontSize: 14,
+                              fontSize: 13,
                             ),
                             decoration: InputDecoration(
-                              hintText: isSignIn
-                                  ? 'Enter your password'
-                                  : 'Min. 6 characters',
+                              hintText: isSignIn ? 'Enter access key' : 'Min. 6 characters',
                               prefixIcon: const Icon(
                                 Icons.lock_outline_rounded,
                                 color: AppTheme.textMuted,
-                                size: 20,
+                                size: 18,
                               ),
                               suffixIcon: IconButton(
                                 icon: Icon(
@@ -348,7 +340,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                       ? Icons.visibility_off_outlined
                                       : Icons.visibility_outlined,
                                   color: AppTheme.textMuted,
-                                  size: 20,
+                                  size: 18,
                                 ),
                                 onPressed: () {
                                   setState(() {
@@ -368,32 +360,31 @@ class _AuthScreenState extends State<AuthScreen> {
                             },
                           ),
 
-                          // Confirm Password (Sign Up only)
                           if (!isSignIn) ...[
                             const SizedBox(height: 18),
-                            const Text(
-                              'CONFIRM PASSWORD',
-                              style: TextStyle(
+                            Text(
+                              'CONFIRM ACCESS KEY',
+                              style: GoogleFonts.inter(
                                 color: AppTheme.textMuted,
                                 fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.8,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.5,
                               ),
                             ),
                             const SizedBox(height: 8),
                             TextFormField(
                               controller: _confirmPasswordController,
                               obscureText: _obscureConfirmPassword,
-                              style: const TextStyle(
+                              style: GoogleFonts.inter(
                                 color: AppTheme.textPrimary,
-                                fontSize: 14,
+                                fontSize: 13,
                               ),
                               decoration: InputDecoration(
-                                hintText: 'Re-enter your password',
+                                hintText: 'Re-enter passphrase',
                                 prefixIcon: const Icon(
                                   Icons.lock_reset_rounded,
                                   color: AppTheme.textMuted,
-                                  size: 20,
+                                  size: 18,
                                 ),
                                 suffixIcon: IconButton(
                                   icon: Icon(
@@ -401,7 +392,7 @@ class _AuthScreenState extends State<AuthScreen> {
                                         ? Icons.visibility_off_outlined
                                         : Icons.visibility_outlined,
                                     color: AppTheme.textMuted,
-                                    size: 20,
+                                    size: 18,
                                   ),
                                   onPressed: () {
                                     setState(() {
@@ -425,41 +416,47 @@ class _AuthScreenState extends State<AuthScreen> {
 
                           const SizedBox(height: 26),
 
-                          // Submit CTA Button
                           SizedBox(
                             width: double.infinity,
                             height: 48,
                             child: ElevatedButton(
                               onPressed: _isLoading ? null : _submit,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: isSignIn
-                                    ? AppTheme.primary
-                                    : AppTheme.secondary,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                               ),
                               child: _isLoading
                                   ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
+                                      width: 16,
+                                      height: 16,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
-                                        color: Colors.white,
+                                        color: AppTheme.brassAccent,
                                       ),
                                     )
                                   : Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
                                         Icon(
                                           isSignIn
-                                              ? Icons.login_rounded
+                                              ? Icons.key_rounded
                                               : Icons.person_add_alt_1_rounded,
-                                          size: 18,
+                                          size: 16,
+                                          color: AppTheme.brassAccent,
                                         ),
                                         const SizedBox(width: 8),
-                                        Text(
-                                          isSignIn
-                                              ? 'Sign In to Node'
-                                              : 'Create Node Account',
+                                        Flexible(
+                                          child: Text(
+                                            isSignIn
+                                                ? 'CONNECT OPERATOR TERMINAL'
+                                                : 'REGISTER STATION NODE',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              letterSpacing: 0.5,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -472,15 +469,14 @@ class _AuthScreenState extends State<AuthScreen> {
 
                   const SizedBox(height: 24),
 
-                  // Subtle Footer Info
                   Center(
                     child: Text(
                       isSignIn
-                          ? 'Each node verifies and stores encrypted memory fragments.'
-                          : 'Initial node balance: 0 CR • Reliability: 100%',
-                      style: const TextStyle(
+                          ? 'CIRCULAR REPLICATION PROTOCOL • BIOLOGICAL MEMORY VAULT'
+                          : 'INITIAL STATION CREDITS: 0 CR • RETENTION SCORE: 100%',
+                      style: GoogleFonts.spaceMono(
                         color: AppTheme.textMuted,
-                        fontSize: 12,
+                        fontSize: 10,
                       ),
                       textAlign: TextAlign.center,
                     ),
@@ -505,19 +501,20 @@ class _AuthScreenState extends State<AuthScreen> {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(vertical: 10),
         decoration: BoxDecoration(
-          color: isSelected ? AppTheme.surfaceLight : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          color: isSelected ? AppTheme.surfaceElevated : Colors.transparent,
+          borderRadius: BorderRadius.circular(3),
           border: isSelected
-              ? Border.all(color: AppTheme.border)
+              ? Border.all(color: AppTheme.borderSubtle)
               : Border.all(color: Colors.transparent),
         ),
         child: Center(
           child: Text(
             title,
-            style: TextStyle(
-              color: isSelected ? AppTheme.textPrimary : AppTheme.textMuted,
-              fontSize: 13,
+            style: GoogleFonts.inter(
+              color: isSelected ? AppTheme.brassAccent : AppTheme.textMuted,
+              fontSize: 11,
               fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+              letterSpacing: 0.5,
             ),
           ),
         ),

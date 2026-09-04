@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 
 /// A physical telegraph indicator lamp with brass bezel, jewel lens effect,
@@ -28,13 +29,11 @@ class IndicatorLamp extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        // Brass bezel ring
         border: Border.all(
-          color: AppTheme.brassLight.withValues(alpha: 0.8),
+          color: AppTheme.brassLight.withValues(alpha: 0.9),
           width: 1.5,
         ),
         boxShadow: [
-          // Outer warm jewel glow
           BoxShadow(
             color: lampColor.withValues(alpha: isOnline ? 0.6 : 0.2),
             blurRadius: isOnline ? 6 : 2,
@@ -48,7 +47,7 @@ class IndicatorLamp extends StatelessWidget {
             lampColor.withValues(alpha: 0.8),
           ],
           stops: const [0.0, 0.45, 1.0],
-          center: const Alignment(-0.25, -0.25), // Jewel lens light reflection
+          center: const Alignment(-0.25, -0.25),
         ),
       ),
     );
@@ -59,8 +58,8 @@ class IndicatorLamp extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: AppTheme.surfaceElevated,
-        borderRadius: BorderRadius.circular(2), // Rectangular engraved plate
-        border: Border.all(color: AppTheme.borderBrass, width: 1),
+        borderRadius: BorderRadius.circular(3),
+        border: Border.all(color: AppTheme.borderSubtle, width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.35),
@@ -77,11 +76,9 @@ class IndicatorLamp extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             labelText,
-            style: TextStyle(
-              fontFamily: AppTheme.monoFamily,
-              fontFamilyFallback: AppTheme.monoFallbacks,
+            style: GoogleFonts.spaceMono(
               color: isOnline ? AppTheme.textPrimary : AppTheme.textMuted,
-              fontSize: 10.5,
+              fontSize: 10,
               fontWeight: FontWeight.w700,
               letterSpacing: 1.0,
             ),

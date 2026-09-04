@@ -1,23 +1,25 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 
 /// A precision mechanical instrument dial for measuring human node reliability.
+/// Automatically adapts its radius to available parent constraints.
 class CalibrationDial extends StatelessWidget {
   final double scorePercent; // 0.0 to 100.0
-  final double size;
+  final double? size;
   final String title;
 
   const CalibrationDial({
     super.key,
     required this.scorePercent,
-    this.size = 140,
-    this.title = 'RECALL RELIABILITY',
+    this.size,
+    this.title = 'RETENTION INDEX',
   });
 
   String get conditionRating {
     if (scorePercent >= 95.0) return 'OPTIMAL';
-    if (scorePercent >= 80.0) return 'ACCEPTABLE';
+    if (scorePercent >= 80.0) return 'GOOD';
     if (scorePercent >= 60.0) return 'DEGRADED';
     return 'STANDBY';
   }
@@ -32,110 +34,102 @@ class CalibrationDial extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: AppTheme.surfaceElevated,
         borderRadius: BorderRadius.circular(2),
-        border: Border.all(color: AppTheme.borderBrass, width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.4),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: AppTheme.border, width: 1.0),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final dialWidth = math.min(constraints.maxWidth * 0.7, size ?? 150.0);
+
+          return Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                title.toUpperCase(),
-                style: const TextStyle(
-                  fontFamily: AppTheme.serifFamily,
-                  fontFamilyFallback: AppTheme.serifFallbacks,
-                  color: AppTheme.brassLight,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.2,
-                ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      title.toUpperCase(),
+                      style: GoogleFonts.inter(
+                        color: AppTheme.textMuted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surface,
+                      border: Border.all(color: conditionColor.withValues(alpha: 0.5), width: 0.8),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                    child: Text(
+                      conditionRating,
+                      style: GoogleFonts.spaceMono(
+                        color: conditionColor,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppTheme.surface,
-                  border: Border.all(color: conditionColor.withValues(alpha: 0.7), width: 1),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-                child: Text(
-                  conditionRating,
-                  style: TextStyle(
-                    fontFamily: AppTheme.monoFamily,
-                    fontFamilyFallback: AppTheme.monoFallbacks,
-                    color: conditionColor,
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.8,
+              const SizedBox(height: 8),
+              SizedBox(
+                width: dialWidth,
+                height: dialWidth * 0.55,
+                child: CustomPaint(
+                  painter: _DialPainter(
+                    percent: (scorePercent.clamp(0.0, 100.0)) / 100.0,
+                    accentColor: conditionColor,
                   ),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: size,
-            height: size * 0.65,
-            child: CustomPaint(
-              painter: _DialPainter(
-                percent: (scorePercent.clamp(0.0, 100.0)) / 100.0,
-                accentColor: conditionColor,
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(
+                    scorePercent.toStringAsFixed(1),
+                    style: GoogleFonts.playfairDisplay(
+                      color: AppTheme.textPrimary,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                  Text(
+                    '%',
+                    style: GoogleFonts.spaceMono(
+                      color: AppTheme.brass,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
+              const SizedBox(height: 1),
               Text(
-                scorePercent.toStringAsFixed(1),
-                style: const TextStyle(
-                  fontFamily: AppTheme.serifFamily,
-                  fontFamilyFallback: AppTheme.serifFallbacks,
-                  color: AppTheme.textPrimary,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(width: 3),
-              const Text(
-                '%',
-                style: TextStyle(
-                  fontFamily: AppTheme.monoFamily,
-                  fontFamilyFallback: AppTheme.monoFallbacks,
-                  color: AppTheme.brass,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
+                'BIOLOGICAL RECALL ACCURACY',
+                style: GoogleFonts.inter(
+                  color: AppTheme.textMuted,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 2),
-          const Text(
-            'BIOLOGICAL RETENTION INDEX',
-            style: TextStyle(
-              fontFamily: AppTheme.monoFamily,
-              fontFamilyFallback: AppTheme.monoFallbacks,
-              color: AppTheme.textMuted,
-              fontSize: 9,
-              letterSpacing: 1.0,
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
@@ -149,17 +143,16 @@ class _DialPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height * 0.9);
-    final radius = size.width * 0.42;
+    final center = Offset(size.width / 2, size.height * 0.95);
+    final radius = size.width * 0.44;
 
     const startAngle = math.pi;
     const sweepAngle = math.pi;
 
-    // Background track
     final trackPaint = Paint()
       ..color = AppTheme.border
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.0;
+      ..strokeWidth = 3.5;
 
     canvas.drawArc(
       Rect.fromCircle(center: center, radius: radius),
@@ -169,16 +162,15 @@ class _DialPainter extends CustomPainter {
       trackPaint,
     );
 
-    // Ticks around the arc
     final tickPaint = Paint()
-      ..color = AppTheme.textMuted
+      ..color = AppTheme.textMuted.withValues(alpha: 0.6)
       ..strokeWidth = 1.0;
 
-    const tickCount = 10;
+    const tickCount = 8;
     for (int i = 0; i <= tickCount; i++) {
       final angle = startAngle + (sweepAngle * (i / tickCount));
-      final innerR = radius - (i % 5 == 0 ? 8 : 4);
-      final outerR = radius + 2;
+      final innerR = radius - 5;
+      final outerR = radius + 1;
 
       final p1 = Offset(center.dx + innerR * math.cos(angle), center.dy + innerR * math.sin(angle));
       final p2 = Offset(center.dx + outerR * math.cos(angle), center.dy + outerR * math.sin(angle));
@@ -186,11 +178,10 @@ class _DialPainter extends CustomPainter {
       canvas.drawLine(p1, p2, tickPaint);
     }
 
-    // Active fill arc
     final activePaint = Paint()
       ..color = accentColor
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.0
+      ..strokeWidth = 3.5
       ..strokeCap = StrokeCap.round;
 
     canvas.drawArc(
@@ -201,27 +192,22 @@ class _DialPainter extends CustomPainter {
       activePaint,
     );
 
-    // Needle
     final needleAngle = startAngle + (sweepAngle * percent);
-    final needleLength = radius - 4;
+    final needleLength = radius - 3;
     final needleTip = Offset(
       center.dx + needleLength * math.cos(needleAngle),
       center.dy + needleLength * math.sin(needleAngle),
     );
 
     final needlePaint = Paint()
-      ..color = AppTheme.brassLight
-      ..strokeWidth = 2.0
+      ..color = AppTheme.textPrimary
+      ..strokeWidth = 1.8
       ..strokeCap = StrokeCap.round;
 
     canvas.drawLine(center, needleTip, needlePaint);
 
-    // Brass center pivot hub
-    final hubPaint = Paint()..color = AppTheme.brassDark;
-    canvas.drawCircle(center, 6, hubPaint);
-
-    final hubScrew = Paint()..color = AppTheme.brassLight;
-    canvas.drawCircle(center, 3, hubScrew);
+    final hubPaint = Paint()..color = AppTheme.brass;
+    canvas.drawCircle(center, 4, hubPaint);
   }
 
   @override

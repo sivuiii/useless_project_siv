@@ -2,7 +2,7 @@
 -- Description: Human Server memorization architecture:
 --   1. Update fragment_assignments status check constraint to include 'memorized'
 --   2. Add secure RPC get_memorized_fragments_for_node: returns metadata ONLY (no plaintext)
---   3. Ensure confirm_fragment_receipt marks assignment as 'fulfilled' or 'memorized' and purges transport inbox
+--   3. Ensure confirm_fragment_receipt marks assignment as 'memorized' and purges transport inbox
 --   4. Grant privileges to authenticated users and set security definer ownership
 
 -- 1. Update fragment_assignments status check constraint to support 'memorized'
@@ -71,7 +71,7 @@ BEGIN
 END;
 $$;
 
--- 3. Update confirm_fragment_receipt to mark assignment as 'fulfilled' (memorized) and delete transport row
+-- 3. Update confirm_fragment_receipt to mark assignment as 'memorized' and delete transport row
 CREATE OR REPLACE FUNCTION public.confirm_fragment_receipt(
     p_assignment_id UUID
 )
@@ -115,9 +115,9 @@ BEGIN
         RAISE EXCEPTION 'Assignment does not exist or does not belong to caller node';
     END IF;
 
-    -- 3. Verify assignment status is currently 'assigned'
-    IF v_assignment.status != 'assigned' THEN
-        RAISE EXCEPTION 'Assignment status is %, expected assigned', v_assignment.status;
+    -- 3. Verify assignment status is eligible ('assigned', or already 'memorized'/'fulfilled' in retry)
+    IF v_assignment.status NOT IN ('assigned', 'memorized', 'fulfilled') THEN
+        RAISE EXCEPTION 'Assignment status is %, expected assigned or memorized', v_assignment.status;
     END IF;
 
     -- 4. Verify memory and fragment have not expired
@@ -134,12 +134,16 @@ BEGIN
     ) INTO v_inbox_exists;
 
     IF NOT v_inbox_exists THEN
+        -- If already memorized or fulfilled and inbox row is gone, treat as idempotent success
+        IF v_assignment.status IN ('memorized', 'fulfilled') THEN
+            RETURN TRUE;
+        END IF;
         RAISE EXCEPTION 'Temporary delivery inbox record does not exist or has expired';
     END IF;
 
-    -- 6. Mark assignment as fulfilled (human node has memorized the fragment)
+    -- 6. Mark assignment as memorized (human node has memorized the fragment)
     UPDATE public.fragment_assignments AS fa
-    SET status = 'fulfilled',
+    SET status = 'memorized',
         last_verified_at = now()
     WHERE fa.id = p_assignment_id;
 

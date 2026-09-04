@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../models/mock_data.dart';
 import '../models/node.dart';
@@ -11,6 +12,7 @@ import '../widgets/activity_tile.dart';
 import '../widgets/max_width_container.dart';
 import '../widgets/stat_card.dart';
 import '../widgets/status_badge.dart';
+import '../widgets/telegraph_network_map.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback onNavigateToStore;
@@ -39,22 +41,38 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        centerTitle: false,
+        titleSpacing: 16,
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
+              width: 24,
+              height: 24,
               decoration: BoxDecoration(
-                color: AppTheme.primary.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
+                color: AppTheme.surfaceElevated,
+                border: Border.all(color: AppTheme.border, width: 1),
+                borderRadius: BorderRadius.circular(3),
               ),
               child: const Icon(
                 Icons.hub_rounded,
-                color: AppTheme.primary,
-                size: 20,
+                color: AppTheme.brass,
+                size: 14,
               ),
             ),
             const SizedBox(width: 10),
-            const Text('Human Server'),
+            Flexible(
+              child: Text(
+                'Human Server',
+                style: GoogleFonts.playfairDisplay(
+                  color: AppTheme.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.3,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         actions: [
@@ -71,6 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: MaxWidthContainer(
           child: ValueListenableBuilder<UserProfile?>(
             valueListenable: AuthService.instance.currentProfileNotifier,
@@ -98,188 +117,252 @@ class _HomeScreenState extends State<HomeScreen> {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Hero Info Banner
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              AppTheme.surface,
-                              AppTheme.surfaceLight.withValues(alpha: 0.6),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: AppTheme.border),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      // Header: Typographic hierarchy (whitespace rather than loud box)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4.0, bottom: 12.0),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'WELCOME, ${username.toUpperCase()}',
-                                  style: const TextStyle(
-                                    color: AppTheme.textMuted,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 1.0,
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: AppTheme.primary.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: const Text(
-                                    'DECENTRALIZED NODE',
-                                    style: TextStyle(
-                                      color: AppTheme.primaryLight,
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'COMMUNICATIONS DESK',
+                                    style: GoogleFonts.inter(
+                                      color: AppTheme.textMuted,
                                       fontSize: 10,
                                       fontWeight: FontWeight.w600,
+                                      letterSpacing: 0.8,
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            const Text(
-                              'Distributed Human Memory Network',
-                              style: TextStyle(
-                                color: AppTheme.textPrimary,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    username,
+                                    style: GoogleFonts.playfairDisplay(
+                                      color: AppTheme.textPrimary,
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'Store plaintext information securely across active human nodes. Earn credits by serving as a verification node.',
-                              style: TextStyle(
-                                color: AppTheme.textSecondary,
-                                fontSize: 13,
-                                height: 1.4,
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceElevated,
+                                border: Border.all(color: AppTheme.border),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                              child: Text(
+                                'CIRCUIT ACTIVE',
+                                style: GoogleFonts.spaceMono(
+                                  color: AppTheme.signalOnline,
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
 
-                      const SizedBox(height: 20),
-
-                      // Metrics Row
-                      Row(
-                        children: [
-                          Expanded(
-                            child: StatCard(
-                              label: 'Balance',
-                              value: '$credits CR',
-                              icon: Icons.account_balance_wallet_rounded,
-                              accentColor: AppTheme.secondary,
-                              subtitle: profile != null
-                                  ? 'Active node balance'
-                                  : '+20 earned today',
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: StatCard(
-                              label: 'Reliability',
-                              value: '$reliabilityVal%',
-                              icon: Icons.verified_rounded,
-                              accentColor: AppTheme.primary,
-                              subtitle: 'Optimal score',
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: ValueListenableBuilder<int>(
-                              valueListenable:
-                                  MemoryService.instance.activeMemoriesCountNotifier,
-                              builder: (context, activeCount, _) {
-                                return StatCard(
-                                  label: 'Memories',
-                                  value: '$activeCount/5',
-                                  icon: Icons.inventory_2_rounded,
-                                  accentColor: AppTheme.warning,
-                                  subtitle: 'Expires 6 mos',
-                                );
-                              },
-                            ),
-                          ),
-                        ],
+                      // 1. Network Topology (Hero Visualization)
+                      const TelegraphNetworkMap(
+                        activeNodesCount: 6,
+                        networkHealth: 96.4,
                       ),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 14),
 
-                      // Prominent Action Buttons
-                      const Text(
-                        'QUICK ACTIONS',
-                        style: TextStyle(
+                      // 2. Primary Communications Actions (Desk Controls)
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isNarrow = constraints.maxWidth < 460;
+                          return isNarrow
+                              ? Column(
+                                  children: [
+                                    _DeskActionButton(
+                                      label: 'DISPATCH MEMORY',
+                                      hint: 'Fragment & send telegram into human network',
+                                      icon: Icons.send_rounded,
+                                      accentColor: AppTheme.brass,
+                                      onTap: widget.onNavigateToStore,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    _DeskActionButton(
+                                      label: 'RECALL MEMORY',
+                                      hint: 'Query human nodes to reconstruct payload',
+                                      icon: Icons.downloading_rounded,
+                                      accentColor: AppTheme.signalOnline,
+                                      onTap: widget.onNavigateToRetrieve,
+                                    ),
+                                  ],
+                                )
+                              : Row(
+                                  children: [
+                                    Expanded(
+                                      child: _DeskActionButton(
+                                        label: 'DISPATCH MEMORY',
+                                        hint: 'Fragment into human network',
+                                        icon: Icons.send_rounded,
+                                        accentColor: AppTheme.brass,
+                                        onTap: widget.onNavigateToStore,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _DeskActionButton(
+                                        label: 'RECALL MEMORY',
+                                        hint: 'Query nodes to reconstruct',
+                                        icon: Icons.downloading_rounded,
+                                        accentColor: AppTheme.signalOnline,
+                                        onTap: widget.onNavigateToRetrieve,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                        },
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      // 3. Storage Health & Ledger (Responsive Mobile vs Desktop)
+                      Text(
+                        'STORAGE STATE & LEDGER',
+                        style: GoogleFonts.inter(
                           color: AppTheme.textMuted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.8,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.6,
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
 
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _ActionCard(
-                              title: 'Store Memory',
-                              description: 'Encrypt & chunk info into network',
-                              icon: Icons.add_to_photos_rounded,
-                              color: AppTheme.primary,
-                              onTap: widget.onNavigateToStore,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _ActionCard(
-                              title: 'Retrieve Memory',
-                              description: 'Query recall prompt across nodes',
-                              icon: Icons.search_rounded,
-                              color: AppTheme.secondary,
-                              onTap: widget.onNavigateToRetrieve,
-                            ),
-                          ),
-                        ],
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final isMobile = constraints.maxWidth < 540;
+
+                          if (isMobile) {
+                            // Mobile Composition: 2 cards on top, 1 wide ledger card below
+                            // Each card has at least 150dp width and NEVER overflows!
+                            return Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: StatCard(
+                                        label: 'Retention',
+                                        value: '$reliabilityVal%',
+                                        icon: Icons.verified_rounded,
+                                        accentColor: AppTheme.signalOnline,
+                                        subtitle: 'Optimal accuracy',
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: ValueListenableBuilder<int>(
+                                        valueListenable: MemoryService.instance.activeMemoriesCountNotifier,
+                                        builder: (context, activeCount, _) {
+                                          return StatCard(
+                                            label: 'Stored Memories',
+                                            value: '$activeCount/5',
+                                            icon: Icons.inventory_2_rounded,
+                                            accentColor: AppTheme.signalWarning,
+                                            subtitle: 'Expires 6 mos',
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                StatCard(
+                                  label: 'Credit Ledger Balance',
+                                  value: '$credits CR',
+                                  icon: Icons.account_balance_wallet_rounded,
+                                  accentColor: AppTheme.brass,
+                                  subtitle: 'Institutional node balance',
+                                ),
+                              ],
+                            );
+                          } else {
+                            // Desktop Composition: 3 balanced cards across the row
+                            return Row(
+                              children: [
+                                Expanded(
+                                  child: StatCard(
+                                    label: 'Credit Ledger',
+                                    value: '$credits CR',
+                                    icon: Icons.account_balance_wallet_rounded,
+                                    accentColor: AppTheme.brass,
+                                    subtitle: 'Node balance',
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: StatCard(
+                                    label: 'Retention',
+                                    value: '$reliabilityVal%',
+                                    icon: Icons.verified_rounded,
+                                    accentColor: AppTheme.signalOnline,
+                                    subtitle: 'Optimal score',
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: ValueListenableBuilder<int>(
+                                    valueListenable: MemoryService.instance.activeMemoriesCountNotifier,
+                                    builder: (context, activeCount, _) {
+                                      return StatCard(
+                                        label: 'Stored Memories',
+                                        value: '$activeCount/5',
+                                        icon: Icons.inventory_2_rounded,
+                                        accentColor: AppTheme.signalWarning,
+                                        subtitle: 'Expires 6 mos',
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            );
+                          }
+                        },
                       ),
 
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 22),
 
-                      // Recent Activity Section
+                      // 4. Activity Ledger (Clean typographic lines, no box nesting!)
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            'RECENT ACTIVITY',
-                            style: TextStyle(
-                              color: AppTheme.textMuted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.8,
+                          Expanded(
+                            child: Text(
+                              'COMMUNICATIONS REGISTER',
+                              style: GoogleFonts.inter(
+                                color: AppTheme.textMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 0.6,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          TextButton(
-                            onPressed: () {},
-                            child: const Text(
-                              'View Log',
-                              style: TextStyle(
-                                color: AppTheme.primaryLight,
-                                fontSize: 12,
-                              ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'LOG',
+                            style: GoogleFonts.spaceMono(
+                              color: AppTheme.textMuted,
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 6),
+                      const Divider(thickness: 0.8),
 
                       ...MockDataRepository.recentActivities
                           .map((activity) => ActivityTile(activity: activity)),
@@ -295,64 +378,79 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _ActionCard extends StatelessWidget {
-  final String title;
-  final String description;
+/// Tactical communications desk button designed to feel like an instrument control.
+class _DeskActionButton extends StatelessWidget {
+  final String label;
+  final String hint;
   final IconData icon;
-  final Color color;
+  final Color accentColor;
   final VoidCallback onTap;
 
-  const _ActionCard({
-    required this.title,
-    required this.description,
+  const _DeskActionButton({
+    required this.label,
+    required this.hint,
     required this.icon,
-    required this.color,
+    required this.accentColor,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: AppTheme.surface,
-      borderRadius: BorderRadius.circular(14),
-      clipBehavior: Clip.antiAlias,
+      color: AppTheme.surfaceElevated,
+      borderRadius: BorderRadius.circular(2),
       child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(2),
         child: Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: color.withValues(alpha: 0.3), width: 1.5),
+            borderRadius: BorderRadius.circular(2),
+            border: Border.all(color: AppTheme.border, width: 1.0),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(2),
+                  border: Border.all(color: AppTheme.border),
                 ),
-                child: Icon(icon, color: color, size: 22),
+                child: Icon(icon, color: accentColor, size: 16),
               ),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                style: const TextStyle(
-                  color: AppTheme.textPrimary,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: GoogleFonts.inter(
+                        color: AppTheme.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.3,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      hint,
+                      style: GoogleFonts.inter(
+                        color: AppTheme.textSecondary,
+                        fontSize: 11,
+                        height: 1.2,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                description,
-                style: const TextStyle(
-                  color: AppTheme.textSecondary,
-                  fontSize: 11,
-                  height: 1.3,
-                ),
-              ),
+              const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: AppTheme.textMuted),
             ],
           ),
         ),

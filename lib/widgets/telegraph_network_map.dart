@@ -1,9 +1,10 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 
-/// Interactive visual representation of the human node communications network.
-/// Replaces explanatory copy with an instrument-style network topology map.
+/// Responsive visual representation of the human node communications network.
+/// Automatically adapts between compact mobile aspect ratios and expansive desktop views.
 class TelegraphNetworkMap extends StatefulWidget {
   final int activeNodesCount;
   final double networkHealth;
@@ -45,78 +46,67 @@ class _TelegraphNetworkMapState extends State<TelegraphNetworkMap>
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: AppTheme.surface,
         borderRadius: BorderRadius.circular(2),
-        border: Border.all(color: AppTheme.borderBrass, width: 1.2),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.5),
-            blurRadius: 6,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        border: Border.all(color: AppTheme.border, width: 1.0),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header Bar with Instrument Title & Gauge
+          // Header: Title & Network Cohesion
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'TELEGRAPH RELAY TOPOLOGY',
-                    style: TextStyle(
-                      fontFamily: AppTheme.serifFamily,
-                      fontFamilyFallback: AppTheme.serifFallbacks,
-                      color: AppTheme.brassLight,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.2,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'NETWORK TOPOLOGY',
+                      style: GoogleFonts.playfairDisplay(
+                        color: AppTheme.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '${widget.activeNodesCount} ACTIVE HUMAN STATIONS IN CIRCUIT',
-                    style: const TextStyle(
-                      fontFamily: AppTheme.monoFamily,
-                      fontFamilyFallback: AppTheme.monoFallbacks,
-                      color: AppTheme.textMuted,
-                      fontSize: 10,
-                      letterSpacing: 0.8,
+                    const SizedBox(height: 1),
+                    Text(
+                      '${widget.activeNodesCount} HUMAN NODES IN CIRCUIT',
+                      style: GoogleFonts.spaceMono(
+                        color: AppTheme.textMuted,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
                   color: AppTheme.surfaceElevated,
-                  border: Border.all(color: AppTheme.borderBrass),
+                  border: Border.all(color: AppTheme.border),
                   borderRadius: BorderRadius.circular(2),
                 ),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      width: 6,
-                      height: 6,
+                      width: 5,
+                      height: 5,
                       decoration: const BoxDecoration(
                         color: AppTheme.signalOnline,
                         shape: BoxShape.circle,
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 5),
                     Text(
                       '${widget.networkHealth.toStringAsFixed(1)}% COHESION',
-                      style: const TextStyle(
-                        fontFamily: AppTheme.monoFamily,
-                        fontFamilyFallback: AppTheme.monoFallbacks,
+                      style: GoogleFonts.spaceMono(
                         color: AppTheme.textPrimary,
-                        fontSize: 10,
+                        fontSize: 9.5,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -126,41 +116,46 @@ class _TelegraphNetworkMapState extends State<TelegraphNetworkMap>
             ],
           ),
 
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
 
-          // Custom Painted Network Grid
-          AnimatedBuilder(
-            animation: _pulseController,
-            builder: (context, child) {
-              return SizedBox(
-                height: 160,
-                width: double.infinity,
-                child: CustomPaint(
-                  painter: _NetworkTopologyPainter(
-                    pulseValue: _pulseController.value,
-                    nodesCount: widget.activeNodesCount,
-                  ),
-                ),
+          // Responsive Canvas
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final canvasHeight = constraints.maxWidth < 400 ? 140.0 : 170.0;
+              return AnimatedBuilder(
+                animation: _pulseController,
+                builder: (context, child) {
+                  return SizedBox(
+                    height: canvasHeight,
+                    width: constraints.maxWidth,
+                    child: CustomPaint(
+                      painter: _NetworkTopologyPainter(
+                        pulseValue: _pulseController.value,
+                        nodesCount: widget.activeNodesCount,
+                        isCompact: constraints.maxWidth < 400,
+                      ),
+                    ),
+                  );
+                },
               );
             },
           ),
 
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
 
-          // Footer Telemetry Strip
+          // Subdued Telemetry Strip
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: AppTheme.surfaceElevated,
-              borderRadius: BorderRadius.circular(2),
-              border: Border.all(color: AppTheme.border),
+              borderRadius: BorderRadius.circular(3),
+              border: Border.all(color: AppTheme.border, width: 0.8),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _buildStatusTick('DISPATCH: READY', AppTheme.signalOnline),
-                _buildStatusTick('PARITY: 3X REDUNDANT', AppTheme.brass),
-                _buildStatusTick('STORAGE: BIOLOGICAL', AppTheme.textSecondary),
+                Expanded(child: _buildStatusTick('PARITY: 3X REDUNDANT', AppTheme.brass)),
+                const SizedBox(width: 8),
+                Expanded(child: _buildStatusTick('STORAGE: BIOLOGICAL', AppTheme.signalOnline)),
               ],
             ),
           ),
@@ -179,14 +174,15 @@ class _TelegraphNetworkMapState extends State<TelegraphNetworkMap>
           decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 5),
-        Text(
-          text,
-          style: TextStyle(
-            fontFamily: AppTheme.monoFamily,
-            fontFamilyFallback: AppTheme.monoFallbacks,
-            color: AppTheme.textSecondary,
-            fontSize: 9.5,
-            letterSpacing: 0.6,
+        Flexible(
+          child: Text(
+            text,
+            style: GoogleFonts.spaceMono(
+              color: AppTheme.textSecondary,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w600,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -197,43 +193,35 @@ class _TelegraphNetworkMapState extends State<TelegraphNetworkMap>
 class _NetworkTopologyPainter extends CustomPainter {
   final double pulseValue;
   final int nodesCount;
+  final bool isCompact;
 
   _NetworkTopologyPainter({
     required this.pulseValue,
     required this.nodesCount,
+    required this.isCompact,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height * 0.45);
+    final center = Offset(size.width / 2, size.height * 0.48);
 
-    // Line styles for physical telegraph lines
     final linePaint = Paint()
-      ..color = AppTheme.borderBrass.withValues(alpha: 0.7)
-      ..strokeWidth = 1.2
+      ..color = AppTheme.border.withValues(alpha: 0.9)
+      ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
 
     final pulsePaint = Paint()
       ..color = AppTheme.brassLight
-      ..strokeWidth = 2.0
+      ..strokeWidth = 1.6
       ..style = PaintingStyle.stroke;
 
-    // Calculate satellite stations in a radial orbit
-    final totalNodes = math.max(nodesCount, 5);
-    final radiusX = size.width * 0.38;
-    final radiusY = size.height * 0.38;
+    final totalNodes = math.max(nodesCount, 4);
+    
+    // Safely constrain radius inside canvas bounds so nodes never clip
+    final radiusX = math.min(size.width * 0.38, size.width / 2 - (isCompact ? 28 : 34));
+    final radiusY = math.min(size.height * 0.38, size.height / 2 - 16);
 
     final List<Offset> nodePositions = [];
-    final List<String> nodeLabels = [
-      'STATION 014',
-      'STATION 021',
-      'STATION 033',
-      'STATION 047',
-      'STATION 058',
-      'STATION 062',
-      'STATION 077',
-      'STATION 089',
-    ];
 
     for (int i = 0; i < totalNodes; i++) {
       final angle = (i * (2 * math.pi / totalNodes)) - (math.pi / 2);
@@ -242,93 +230,98 @@ class _NetworkTopologyPainter extends CustomPainter {
       nodePositions.add(Offset(x, y));
     }
 
-    // Draw telegraph connection lines from center to each node
+    // Draw telegraph connection lines
     for (int i = 0; i < nodePositions.length; i++) {
       final target = nodePositions[i];
       canvas.drawLine(center, target, linePaint);
 
-      // Pulse traveling along the wire
       final pulsePos = Offset.lerp(center, target, (pulseValue + (i / totalNodes)) % 1.0)!;
-      canvas.drawCircle(pulsePos, 2.5, pulsePaint);
+      canvas.drawCircle(pulsePos, 2.0, pulsePaint);
     }
 
-    // Draw Peripheral Human Node Stations
+    // Draw Satellite Station Nodes (Tactile pins with jewel light)
     for (int i = 0; i < nodePositions.length; i++) {
       final pos = nodePositions[i];
-      final isOnline = i % 6 != 4; // Mock one station being degraded occasionally
+      final isOnline = i % 6 != 4;
 
-      // Outer bezel plate
-      final plateRect = Rect.fromCenter(center: pos, width: 34, height: 20);
-      final platePaint = Paint()
+      final pinRadius = isCompact ? 10.0 : 12.0;
+
+      // Outer pin bezel
+      final bezelPaint = Paint()
         ..color = AppTheme.surfaceElevated
         ..style = PaintingStyle.fill;
       final borderPaint = Paint()
-        ..color = isOnline ? AppTheme.borderBrass : AppTheme.signalWarning
+        ..color = isOnline ? AppTheme.border : AppTheme.signalWarning
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.0;
 
-      canvas.drawRect(plateRect, platePaint);
-      canvas.drawRect(plateRect, borderPaint);
+      canvas.drawCircle(pos, pinRadius, bezelPaint);
+      canvas.drawCircle(pos, pinRadius, borderPaint);
 
-      // Center signal jewel
+      // Center jewel light
       final jewelPaint = Paint()
         ..color = isOnline ? AppTheme.signalOnline : AppTheme.signalWarning
         ..style = PaintingStyle.fill;
-      canvas.drawCircle(Offset(pos.dx - 8, pos.dy), 3, jewelPaint);
+      canvas.drawCircle(pos, isCompact ? 2.5 : 3.0, jewelPaint);
 
-      // Node number text
+      // Station index badge
       final textSpan = TextSpan(
-        text: (i + 1).toString().padLeft(2, '0'),
-        style: TextStyle(
-          fontFamily: AppTheme.monoFamily,
-          fontFamilyFallback: AppTheme.monoFallbacks,
-          color: AppTheme.textPrimary,
-          fontSize: 9,
-          fontWeight: FontWeight.bold,
+        text: 'N${(i + 1).toString().padLeft(2, '0')}',
+        style: GoogleFonts.spaceMono(
+          color: AppTheme.textMuted,
+          fontSize: isCompact ? 7.5 : 8.5,
+          fontWeight: FontWeight.w700,
         ),
       );
       final textPainter = TextPainter(
         text: textSpan,
         textDirection: TextDirection.ltr,
       )..layout();
-      textPainter.paint(canvas, Offset(pos.dx - 1, pos.dy - (textPainter.height / 2)));
+      textPainter.paint(
+        canvas,
+        Offset(pos.dx - (textPainter.width / 2), pos.dy + (pinRadius + 2)),
+      );
     }
 
-    // Draw Central Hub Station (Your Terminal / Dispatch Key)
-    final hubRect = Rect.fromCenter(center: center, width: 84, height: 32);
+    // Central Dispatch Plate
+    final hubWidth = isCompact ? 68.0 : 80.0;
+    final hubHeight = isCompact ? 26.0 : 30.0;
+    final hubRect = Rect.fromCenter(center: center, width: hubWidth, height: hubHeight);
+
     final hubPaint = Paint()
       ..color = AppTheme.surfaceElevated
       ..style = PaintingStyle.fill;
     final hubBorder = Paint()
-      ..color = AppTheme.brass
+      ..color = AppTheme.brass.withValues(alpha: 0.6)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
+      ..strokeWidth = 1.2;
 
     canvas.drawRect(hubRect, hubPaint);
     canvas.drawRect(hubRect, hubBorder);
 
-    // Hub label
     final hubText = TextPainter(
-      text: const TextSpan(
-        text: 'CENTRAL\nDISPATCH',
-        style: TextStyle(
-          fontFamily: AppTheme.serifFamily,
-          fontFamilyFallback: AppTheme.serifFallbacks,
+      text: TextSpan(
+        text: 'DISPATCH',
+        style: GoogleFonts.playfairDisplay(
           color: AppTheme.brassLight,
-          fontSize: 9,
+          fontSize: isCompact ? 8.5 : 9.5,
           fontWeight: FontWeight.w800,
-          height: 1.1,
-          letterSpacing: 0.8,
+          letterSpacing: 0.6,
         ),
       ),
       textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
     )..layout();
-    hubText.paint(canvas, Offset(center.dx - (hubText.width / 2), center.dy - (hubText.height / 2)));
+    hubText.paint(
+      canvas,
+      Offset(center.dx - (hubText.width / 2), center.dy - (hubText.height / 2)),
+    );
   }
 
   @override
   bool shouldRepaint(covariant _NetworkTopologyPainter oldDelegate) {
-    return oldDelegate.pulseValue != pulseValue || oldDelegate.nodesCount != nodesCount;
+    return oldDelegate.pulseValue != pulseValue ||
+        oldDelegate.nodesCount != nodesCount ||
+        oldDelegate.isCompact != isCompact;
   }
 }

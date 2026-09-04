@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+
 import '../models/mock_data.dart';
 import '../theme/app_theme.dart';
 import '../widgets/max_width_container.dart';
+import '../widgets/reconstruction_visualizer.dart';
 
 class RetrieveScreen extends StatefulWidget {
   const RetrieveScreen({super.key});
@@ -26,9 +29,12 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
     final query = _promptController.text.trim();
     if (query.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a recall prompt.'),
-          backgroundColor: AppTheme.warning,
+        SnackBar(
+          content: Text(
+            'PLEASE ENTER A RECALL QUERY PROMPT.',
+            style: GoogleFonts.spaceMono(fontSize: 12),
+          ),
+          backgroundColor: AppTheme.signalWarning,
         ),
       );
       return;
@@ -39,7 +45,6 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
       _hasSearched = false;
     });
 
-    // Simulate node consensus & retrieval network latency
     Future.delayed(const Duration(milliseconds: 1100), () {
       if (!mounted) return;
       setState(() {
@@ -54,9 +59,18 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Retrieve Memory'),
+        title: Text(
+          'RECALL SIGNAL & RECONSTRUCT',
+          style: GoogleFonts.playfairDisplay(
+            color: AppTheme.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.2,
+          ),
+        ),
       ),
       body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
         child: MaxWidthContainer(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -66,32 +80,42 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: AppTheme.surface,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppTheme.border),
+                  borderRadius: BorderRadius.circular(3),
+                  border: Border.all(color: AppTheme.border, width: 1),
                 ),
-                child: const Row(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.psychology_rounded, color: AppTheme.secondary, size: 24),
-                    SizedBox(width: 14),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceElevated,
+                        border: Border.all(color: AppTheme.border),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: const Icon(Icons.psychology_rounded, color: AppTheme.brassAccent, size: 20),
+                    ),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Semantic Memory Recall',
-                            style: TextStyle(
+                            'SEMANTIC RECALL TELEGRAPH',
+                            style: GoogleFonts.inter(
                               color: AppTheme.textPrimary,
-                              fontSize: 14,
+                              fontSize: 13,
                               fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
                             ),
                           ),
-                          SizedBox(height: 3),
+                          const SizedBox(height: 3),
                           Text(
-                            'Describe what you want to recall. Human nodes will locate matching fragments and reconstruct your memory.',
-                            style: TextStyle(
+                            'Submit recall prompt. Biological station nodes holding matching fragments will transmit responses to reconstruct payload.',
+                            style: GoogleFonts.inter(
                               color: AppTheme.textSecondary,
                               fontSize: 12,
-                              height: 1.3,
+                              height: 1.35,
                             ),
                           ),
                         ],
@@ -104,25 +128,25 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
               const SizedBox(height: 20),
 
               // Query Input Box
-              const Text(
-                'RECALL PROMPT',
-                style: TextStyle(
+              Text(
+                'RECALL QUERY PROMPT',
+                style: GoogleFonts.inter(
                   color: AppTheme.textMuted,
                   fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.8,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5,
                 ),
               ),
               const SizedBox(height: 8),
               TextField(
                 controller: _promptController,
-                style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14),
+                style: GoogleFonts.inter(color: AppTheme.textPrimary, fontSize: 13),
                 decoration: InputDecoration(
-                  hintText: 'e.g. "What was my cabin Wi-Fi password?" or "Guitar serial number"',
-                  prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.textMuted),
+                  hintText: 'e.g. "What was my cabin Wi-Fi password?"',
+                  prefixIcon: const Icon(Icons.search_rounded, color: AppTheme.textMuted, size: 18),
                   suffixIcon: _promptController.text.isNotEmpty
                       ? IconButton(
-                          icon: const Icon(Icons.clear_rounded, size: 18),
+                          icon: const Icon(Icons.clear_rounded, size: 16),
                           onPressed: () {
                             _promptController.clear();
                             setState(() {});
@@ -143,74 +167,68 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
                 child: ElevatedButton.icon(
                   onPressed: _isRetrieving ? null : _handleRetrieve,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.secondary,
+                    backgroundColor: AppTheme.surfaceElevated,
+                    foregroundColor: AppTheme.brassAccent,
+                    side: const BorderSide(color: AppTheme.borderSubtle, width: 1.0),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
                   ),
                   icon: _isRetrieving
                       ? const SizedBox.shrink()
-                      : const Icon(Icons.downloading_rounded, size: 20),
+                      : const Icon(Icons.downloading_rounded, size: 18),
                   label: _isRetrieving
-                      ? const Row(
+                      ? Row(
                           mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            SizedBox(
-                              width: 18,
-                              height: 18,
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                color: Colors.white,
+                                color: AppTheme.brassAccent,
                               ),
                             ),
-                            SizedBox(width: 10),
-                            Text('Querying Human Nodes...'),
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                'CALLING HUMAN STATIONS...',
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.5,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                           ],
                         )
-                      : const Text('Retrieve Memory (Cost: 20 CR)'),
+                      : Text(
+                          'QUERY HUMAN NODES (20 CR)',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
                 ),
               ),
 
-              const SizedBox(height: 28),
+              const SizedBox(height: 24),
 
-              // Results Area Header
-              if (_hasSearched || _results.isNotEmpty) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'RECALLED RESULTS',
-                      style: TextStyle(
-                        color: AppTheme.textMuted,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.8,
-                      ),
-                    ),
-                    if (_hasSearched)
-                      Text(
-                        '${_results.length} match(es) found',
-                        style: const TextStyle(
-                          color: AppTheme.secondary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              // Results List / Mock Recalled Info
+              // Results Area
               if (_isRetrieving) ...[
                 const SizedBox(height: 20),
                 Center(
                   child: Column(
                     children: [
-                      const CircularProgressIndicator(color: AppTheme.secondary),
+                      const CircularProgressIndicator(color: AppTheme.brassLight),
                       const SizedBox(height: 14),
                       Text(
-                        'Collecting consensus from human nodes...',
-                        style: TextStyle(
+                        'COLLECTING CONSENSUS FROM BIOLOGICAL NODES...',
+                        style: GoogleFonts.spaceMono(
                           color: AppTheme.textMuted,
-                          fontSize: 13,
+                          fontSize: 11,
+                          letterSpacing: 0.8,
                         ),
                       ),
                     ],
@@ -222,50 +240,60 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
                     color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(2),
                     border: Border.all(color: AppTheme.border),
                   ),
-                  child: const Column(
+                  child: Column(
                     children: [
-                      Icon(Icons.search_off_rounded, color: AppTheme.textMuted, size: 36),
-                      SizedBox(height: 10),
+                      const Icon(Icons.search_off_rounded, color: AppTheme.textMuted, size: 36),
+                      const SizedBox(height: 10),
                       Text(
-                        'No matching memory found',
-                        style: TextStyle(
+                        'NO MATCHING MEMORY FRAGMENTS',
+                        style: GoogleFonts.playfairDisplay(
                           color: AppTheme.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       Text(
-                        'Try refining your recall prompt or keyword.',
-                        style: TextStyle(color: AppTheme.textMuted, fontSize: 12),
+                        'Refine query prompt to match biological retention indexing.',
+                        style: GoogleFonts.inter(color: AppTheme.textMuted, fontSize: 12),
                       ),
                     ],
                   ),
                 ),
               ] else if (_hasSearched) ...[
-                ..._results.map((item) => _buildResultCard(item)),
+                ..._results.map((item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: ReconstructionVisualizer(
+                        queryPrompt: item.promptMatch,
+                        reconstructedContent: item.content,
+                        confidenceScore: item.confidenceScore,
+                        respondingNodesCount: item.respondingNodesCount,
+                        storedDate: item.storedDate,
+                        expiresDate: item.expiresDate,
+                      ),
+                    )),
               ] else ...[
-                // Initial State Hint
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: AppTheme.surface.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppTheme.border.withValues(alpha: 0.6)),
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(2),
+                    border: Border.all(color: AppTheme.border),
                   ),
-                  child: const Column(
+                  child: Column(
                     children: [
-                      Icon(Icons.find_in_page_rounded, color: AppTheme.textMuted, size: 32),
-                      SizedBox(height: 10),
+                      const Icon(Icons.saved_search_rounded, color: AppTheme.textMuted, size: 32),
+                      const SizedBox(height: 10),
                       Text(
-                        'Enter a recall prompt above to search stored memories',
-                        style: TextStyle(
+                        'ENTER RECALL PROMPT TO INITIATE TELEGRAPH QUERY',
+                        style: GoogleFonts.spaceMono(
                           color: AppTheme.textSecondary,
-                          fontSize: 13,
+                          fontSize: 11,
+                          letterSpacing: 0.5,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -276,99 +304,6 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildResultCard(RecalledMemoryMock item) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  item.promptMatch,
-                  style: const TextStyle(
-                    color: AppTheme.primaryLight,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppTheme.secondary.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  '${(item.confidenceScore * 100).toStringAsFixed(1)}% Match',
-                  style: const TextStyle(
-                    color: AppTheme.secondary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppTheme.background,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppTheme.border),
-            ),
-            child: SelectableText(
-              item.content,
-              style: const TextStyle(
-                color: AppTheme.textPrimary,
-                fontSize: 13,
-                height: 1.4,
-                fontFamily: 'monospace',
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Stored: ${item.storedDate} • Expires: ${item.expiresDate}',
-                style: const TextStyle(
-                  color: AppTheme.textMuted,
-                  fontSize: 11,
-                ),
-              ),
-              Row(
-                children: [
-                  const Icon(Icons.people_rounded, size: 14, color: AppTheme.textMuted),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${item.respondingNodesCount} nodes verified',
-                    style: const TextStyle(
-                      color: AppTheme.textSecondary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../models/mock_data.dart';
 import '../models/node.dart';
@@ -7,6 +8,7 @@ import '../models/stored_node_fragment.dart';
 import '../services/node_service.dart';
 import '../services/node_storage_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/calibration_dial.dart';
 import '../widgets/max_width_container.dart';
 import '../widgets/memorization_dialog.dart';
 import '../widgets/stat_card.dart';
@@ -44,10 +46,13 @@ class _NodeScreenState extends State<NodeScreen> {
         NodeService.instance.pendingDeliveriesNotifier.value = updated;
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Fragment memorized! Entrusted to your human memory.'),
-            backgroundColor: AppTheme.secondary,
-            duration: Duration(seconds: 3),
+          SnackBar(
+            content: Text(
+              'FRAGMENT MEMORIZED! ENTRUSTED TO BIOLOGICAL STORAGE.',
+              style: GoogleFonts.spaceMono(fontSize: 11),
+            ),
+            backgroundColor: AppTheme.signalOnline,
+            duration: const Duration(seconds: 3),
           ),
         );
 
@@ -63,17 +68,17 @@ class _NodeScreenState extends State<NodeScreen> {
     if (mounted) {
       final msg = result.isSuccess
           ? (result.pendingDeliveries.isNotEmpty
-              ? 'Synced: ${result.pendingDeliveries.length} fragment(s) awaiting memorization!'
+              ? 'SYNC: ${result.pendingDeliveries.length} FRAGMENT(S) AWAITING MEMORIZATION'
               : (result.rebalancedCount > 0
-                  ? 'Synced: ${result.rebalancedCount} fragment(s) assigned to this node'
-                  : 'Node telemetry & storage up to date (${result.storedCount} memorized)'))
-          : 'Sync error: ${result.error}';
+                  ? 'SYNC: ${result.rebalancedCount} FRAGMENT(S) REBALANCED TO THIS STATION'
+                  : 'STATION TELEMETRY UP TO DATE (${result.storedCount} MEMORIZED)'))
+          : 'SYNC ERROR: ${result.error}';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(msg),
+          content: Text(msg, style: GoogleFonts.spaceMono(fontSize: 11)),
           duration: const Duration(seconds: 2),
           backgroundColor:
-              result.isSuccess ? AppTheme.secondary : AppTheme.error,
+              result.isSuccess ? AppTheme.signalOnline : AppTheme.signalOffline,
         ),
       );
 
@@ -99,10 +104,11 @@ class _NodeScreenState extends State<NodeScreen> {
           SnackBar(
             content: Text(
               isNowOnline
-                  ? 'Node status set to ONLINE'
-                  : 'Node status set to OFFLINE',
+                  ? 'STATION CIRCUIT STATUS: ONLINE'
+                  : 'STATION CIRCUIT STATUS: OFFLINE',
+              style: GoogleFonts.spaceMono(fontSize: 11),
             ),
-            backgroundColor: isNowOnline ? AppTheme.secondary : AppTheme.error,
+            backgroundColor: isNowOnline ? AppTheme.signalOnline : AppTheme.signalOffline,
             duration: const Duration(seconds: 2),
           ),
         );
@@ -111,8 +117,8 @@ class _NodeScreenState extends State<NodeScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to update node status: $e'),
-            backgroundColor: AppTheme.error,
+            content: Text('FAILED TO UPDATE STATION STATUS: $e', style: GoogleFonts.spaceMono(fontSize: 11)),
+            backgroundColor: AppTheme.signalOffline,
           ),
         );
       }
@@ -139,7 +145,14 @@ class _NodeScreenState extends State<NodeScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Node Telemetry'),
+        title: Text(
+          'Station Telemetry',
+          style: GoogleFonts.playfairDisplay(
+            color: AppTheme.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
         actions: [
           ValueListenableBuilder<bool>(
             valueListenable: NodeService.instance.isSyncingNotifier,
@@ -147,14 +160,14 @@ class _NodeScreenState extends State<NodeScreen> {
               return IconButton(
                 icon: isSyncing
                     ? const SizedBox(
-                        width: 18,
-                        height: 18,
+                        width: 16,
+                        height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: AppTheme.primary,
+                          color: AppTheme.textPrimary,
                         ),
                       )
-                    : const Icon(Icons.refresh_rounded),
+                    : const Icon(Icons.refresh_rounded, size: 20),
                 onPressed: isSyncing ? null : _handleManualSync,
               );
             },
@@ -170,378 +183,374 @@ class _NodeScreenState extends State<NodeScreen> {
                 if (!isSyncing) return const SizedBox.shrink();
                 return const LinearProgressIndicator(
                   minHeight: 2,
-                  color: AppTheme.primary,
-                  backgroundColor: AppTheme.surfaceLight,
+                  color: AppTheme.brass,
+                  backgroundColor: AppTheme.surfaceElevated,
                 );
               },
             ),
-            MaxWidthContainer(
-          child: ValueListenableBuilder<NodeModel?>(
-            valueListenable: NodeService.instance.currentNodeNotifier,
-            builder: (context, node, _) {
-              final isOnline = node != null ? node.isOnline : user.isNodeOnline;
-              final nodeId = node != null && node.id.isNotEmpty
-                  ? (node.id.length >= 8
-                      ? 'HS-NODE-${node.id.substring(0, 8).toUpperCase()}'
-                      : node.id)
-                  : user.nodeId;
-              final reliabilityVal = node != null
-                  ? (node.reliability <= 1.0
-                      ? (node.reliability * 100).toStringAsFixed(1)
-                      : node.reliability.toStringAsFixed(1))
-                  : '${user.reliability}';
-              final responseRateVal = node != null
-                  ? '${(node.responseRate * 100).toStringAsFixed(1)}%'
-                  : '99.2%';
-              final avgResponseMs = node?.avgResponseMs ?? 0;
-              final lastSeenStr =
-                  node != null ? _formatLastSeen(node.lastSeen) : 'Active';
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: MaxWidthContainer(
+                child: ValueListenableBuilder<NodeModel?>(
+                  valueListenable: NodeService.instance.currentNodeNotifier,
+                  builder: (context, node, _) {
+                    final isOnline = node != null ? node.isOnline : user.isNodeOnline;
+                    final nodeId = node != null && node.id.isNotEmpty
+                        ? (node.id.length >= 8
+                            ? 'HS-STATION-${node.id.substring(0, 8).toUpperCase()}'
+                            : node.id)
+                        : user.nodeId;
+                    final reliabilityVal = node != null
+                        ? (node.reliability <= 1.0
+                            ? node.reliability * 100
+                            : node.reliability)
+                        : user.reliability;
+                    final responseRateVal = node != null
+                        ? '${(node.responseRate * 100).toStringAsFixed(1)}%'
+                        : '99.2%';
+                    final avgResponseMs = node?.avgResponseMs ?? 0;
+                    final lastSeenStr =
+                        node != null ? _formatLastSeen(node.lastSeen) : 'Active';
 
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Node Status Header Card
-                  Container(
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: AppTheme.surface,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: isOnline
-                            ? AppTheme.secondary.withValues(alpha: 0.4)
-                            : AppTheme.error.withValues(alpha: 0.4),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Column(
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: (isOnline
-                                            ? AppTheme.secondary
-                                            : AppTheme.error)
-                                        .withValues(alpha: 0.15),
-                                    shape: BoxShape.circle,
+                        // Node Switchboard Header Panel
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: AppTheme.surface,
+                            borderRadius: BorderRadius.circular(2),
+                            border: Border.all(
+                              color: isOnline ? AppTheme.border : AppTheme.signalOffline.withValues(alpha: 0.6),
+                              width: 1.0,
+                            ),
+                          ),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.surfaceElevated,
+                                      border: Border.all(
+                                        color: isOnline ? AppTheme.signalOnline : AppTheme.signalOffline,
+                                      ),
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                    child: Icon(
+                                      Icons.dns_rounded,
+                                      color: isOnline ? AppTheme.signalOnline : AppTheme.signalOffline,
+                                      size: 16,
+                                    ),
                                   ),
-                                  child: Icon(
-                                    isOnline
-                                        ? Icons.dns_rounded
-                                        : Icons.dns_outlined,
-                                    color: isOnline
-                                        ? AppTheme.secondary
-                                        : AppTheme.error,
-                                    size: 24,
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          nodeId,
+                                          style: GoogleFonts.spaceMono(
+                                            color: AppTheme.textPrimary,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 1),
+                                        Text(
+                                          isOnline ? 'CIRCUIT CONNECTED' : 'CIRCUIT DISCONNECTED',
+                                          style: GoogleFonts.inter(
+                                            color: isOnline ? AppTheme.signalOnline : AppTheme.signalOffline,
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(width: 12),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      nodeId,
-                                      style: const TextStyle(
-                                        color: AppTheme.textPrimary,
-                                        fontSize: 15,
+                                  _isToggling
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: AppTheme.brass,
+                                          ),
+                                        )
+                                      : Switch(
+                                          value: isOnline,
+                                          onChanged: (_) => _toggleNodeStatus(isOnline),
+                                          activeTrackColor: AppTheme.signalOnline.withValues(alpha: 0.5),
+                                          activeColor: AppTheme.signalOnline,
+                                          inactiveThumbColor: AppTheme.textMuted,
+                                          inactiveTrackColor: AppTheme.border,
+                                        ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              const Divider(thickness: 0.8),
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildHeaderMetric(
+                                      'STATUS',
+                                      isOnline ? 'ONLINE' : 'OFFLINE',
+                                      isOnline ? AppTheme.signalOnline : AppTheme.signalOffline,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: _buildHeaderMetric(
+                                      'RELIABILITY',
+                                      '${reliabilityVal.toStringAsFixed(1)}%',
+                                      AppTheme.textPrimary,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: _buildHeaderMetric(
+                                      'LAST SEEN',
+                                      lastSeenStr.toUpperCase(),
+                                      AppTheme.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // Responsive Layout: Dial & Response Stats
+                        // Mobile: Stack vertically to give CalibrationDial full breathing room!
+                        // Desktop: Side-by-side
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            final isMobile = constraints.maxWidth < 540;
+
+                            if (isMobile) {
+                              return Column(
+                                children: [
+                                  CalibrationDial(
+                                    scorePercent: reliabilityVal,
+                                    title: 'RETENTION ACCURACY',
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: StatCard(
+                                          label: 'Response Time',
+                                          value: '$avgResponseMs ms',
+                                          icon: Icons.speed_rounded,
+                                          subtitle: 'Circuit latency',
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: StatCard(
+                                          label: 'Response Rate',
+                                          value: responseRateVal,
+                                          icon: Icons.checklist_rtl_rounded,
+                                          accentColor: AppTheme.signalOnline,
+                                          subtitle: 'Challenge success',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              );
+                            } else {
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    flex: 5,
+                                    child: CalibrationDial(
+                                      scorePercent: reliabilityVal,
+                                      title: 'RETENTION ACCURACY',
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    flex: 5,
+                                    child: Column(
+                                      children: [
+                                        StatCard(
+                                          label: 'Response Time',
+                                          value: '$avgResponseMs ms',
+                                          icon: Icons.speed_rounded,
+                                          subtitle: 'Circuit latency',
+                                        ),
+                                        const SizedBox(height: 8),
+                                        StatCard(
+                                          label: 'Response Rate',
+                                          value: responseRateVal,
+                                          icon: Icons.checklist_rtl_rounded,
+                                          accentColor: AppTheme.signalOnline,
+                                          subtitle: 'Challenge success',
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
+                          },
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // Pending Deliveries Banner
+                        ValueListenableBuilder<List<PendingDeliveryFragment>>(
+                          valueListenable: NodeService.instance.pendingDeliveriesNotifier,
+                          builder: (context, pending, _) {
+                            if (pending.isEmpty) return const SizedBox.shrink();
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: AppTheme.surfaceElevated,
+                                borderRadius: BorderRadius.circular(2),
+                                border: Border.all(color: AppTheme.brass, width: 1.0),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.psychology_rounded,
+                                    color: AppTheme.brass,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          '${pending.length} FRAGMENT(S) AWAITING MEMORIZATION',
+                                          style: GoogleFonts.inter(
+                                            color: AppTheme.textPrimary,
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 1),
+                                        Text(
+                                          'Entrusted to your human memory.',
+                                          style: GoogleFonts.inter(
+                                            color: AppTheme.textMuted,
+                                            fontSize: 10.5,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  ElevatedButton(
+                                    onPressed: () => _promptMemorization(pending.first),
+                                    style: ElevatedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    ),
+                                    child: Text(
+                                      'MEMORIZE',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 10.5,
                                         fontWeight: FontWeight.w700,
-                                        fontFamily: 'monospace',
                                       ),
                                     ),
-                                    const SizedBox(height: 2),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+
+                        // Memorized Fragments Ledger
+                        ValueListenableBuilder<List<StoredNodeFragment>>(
+                          valueListenable: NodeStorageService.instance.storedFragmentsNotifier,
+                          builder: (context, storedFragments, _) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        'BIOLOGICAL STORAGE VAULT',
+                                        style: GoogleFonts.inter(
+                                          color: AppTheme.textMuted,
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          letterSpacing: 0.5,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
                                     Text(
-                                      isOnline
-                                          ? 'Active & Responding'
-                                          : 'Paused / Offline',
-                                      style: TextStyle(
-                                        color: isOnline
-                                            ? AppTheme.secondary
-                                            : AppTheme.error,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
+                                      '${storedFragments.length} HOSTED',
+                                      style: GoogleFonts.spaceMono(
+                                        color: AppTheme.textSecondary,
+                                        fontSize: 10,
                                       ),
                                     ),
                                   ],
                                 ),
-                              ],
-                            ),
-                            // Online / Offline Switch
-                            _isToggling
-                                ? const SizedBox(
-                                    width: 24,
-                                    height: 24,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: AppTheme.primary,
+                                const SizedBox(height: 10),
+
+                                if (storedFragments.isEmpty) ...[
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(20),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.surface,
+                                      borderRadius: BorderRadius.circular(2),
+                                      border: Border.all(color: AppTheme.border),
                                     ),
-                                  )
-                                : Switch(
-                                    value: isOnline,
-                                    onChanged: (_) =>
-                                        _toggleNodeStatus(isOnline),
-                                    activeTrackColor: AppTheme.secondary
-                                        .withValues(alpha: 0.5),
-                                    activeColor: AppTheme.secondary,
-                                    inactiveThumbColor: AppTheme.textMuted,
-                                    inactiveTrackColor: AppTheme.border,
+                                    child: Column(
+                                      children: [
+                                        const Icon(Icons.psychology_outlined,
+                                            color: AppTheme.textMuted, size: 30),
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          'No Fragments Memorized Yet',
+                                          style: GoogleFonts.playfairDisplay(
+                                            color: AppTheme.textPrimary,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'When network participants store memories, this station will receive replica fragments for biological retention.',
+                                          style: GoogleFonts.inter(
+                                            color: AppTheme.textMuted,
+                                            fontSize: 11.5,
+                                            height: 1.3,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                          ],
-                        ),
-                        const SizedBox(height: 14),
-                        const Divider(),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _buildHeaderMetric(
-                              'STATUS',
-                              isOnline ? 'ONLINE' : 'OFFLINE',
-                              isOnline ? AppTheme.secondary : AppTheme.error,
-                            ),
-                            _buildHeaderMetric(
-                              'RELIABILITY',
-                              '$reliabilityVal%',
-                              AppTheme.primary,
-                            ),
-                            _buildHeaderMetric(
-                              'LAST SEEN',
-                              lastSeenStr,
-                              AppTheme.warning,
-                            ),
-                          ],
+                                ] else ...[
+                                  ...storedFragments.map((frag) => _buildRealFragmentCard(frag)),
+                                ],
+                              ],
+                            );
+                          },
                         ),
                       ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Response & Performance Stats
-                  const Text(
-                    'RESPONSE TELEMETRY',
-                    style: TextStyle(
-                      color: AppTheme.textMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.8,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: StatCard(
-                          label: 'Avg Response Time',
-                          value: '$avgResponseMs ms',
-                          icon: Icons.speed_rounded,
-                          accentColor: AppTheme.primary,
-                          subtitle: avgResponseMs > 0
-                              ? 'Verified latency'
-                              : 'Pending telemetry',
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: StatCard(
-                          label: 'Response Rate',
-                          value: responseRateVal,
-                          icon: Icons.checklist_rtl_rounded,
-                          accentColor: AppTheme.secondary,
-                          subtitle: 'Challenge success rate',
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  const Row(
-                    children: [
-                      Expanded(
-                        child: StatCard(
-                          label: 'Monthly Uptime',
-                          value: '99.8%',
-                          icon: Icons.timer_rounded,
-                          accentColor: Colors.purpleAccent,
-                          subtitle: '24d 18h online',
-                        ),
-                      ),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: StatCard(
-                          label: 'Node Rewards',
-                          value: '+320 CR',
-                          icon: Icons.savings_rounded,
-                          accentColor: AppTheme.warning,
-                          subtitle: 'Earned this month',
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 28),
-
-                  // Pending Memorization Banner (if any deliveries waiting for human memorization)
-                  ValueListenableBuilder<List<PendingDeliveryFragment>>(
-                    valueListenable: NodeService.instance.pendingDeliveriesNotifier,
-                    builder: (context, pending, _) {
-                      if (pending.isEmpty) return const SizedBox.shrink();
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 18),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: AppTheme.primary.withValues(alpha: 0.6),
-                            width: 1.5,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: AppTheme.primary.withValues(alpha: 0.2),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.psychology_rounded,
-                                color: AppTheme.primary,
-                                size: 22,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '${pending.length} Fragment${pending.length > 1 ? 's' : ''} Awaiting Memorization',
-                                    style: const TextStyle(
-                                      color: AppTheme.textPrimary,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  const Text(
-                                    'Entrusted to your human memory.',
-                                    style: TextStyle(
-                                      color: AppTheme.textMuted,
-                                      fontSize: 11,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            ElevatedButton(
-                              onPressed: () => _promptMemorization(pending.first),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppTheme.primary,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 8),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              child: const Text(
-                                'MEMORIZE',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-
-                  // Fragments Memorized and Hosted in Human Memory
-                  ValueListenableBuilder<List<StoredNodeFragment>>(
-                    valueListenable: NodeStorageService.instance.storedFragmentsNotifier,
-                    builder: (context, storedFragments, _) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'MEMORIZED FRAGMENTS (HUMAN STORAGE)',
-                                style: TextStyle(
-                                  color: AppTheme.textMuted,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: 0.8,
-                                ),
-                              ),
-                              Text(
-                                '${storedFragments.length} Memorized',
-                                style: const TextStyle(
-                                  color: AppTheme.textSecondary,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-
-                          if (storedFragments.isEmpty) ...[
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(22),
-                              decoration: BoxDecoration(
-                                color: AppTheme.surface,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: AppTheme.border),
-                              ),
-                              child: const Column(
-                                children: [
-                                  Icon(Icons.psychology_outlined,
-                                      color: AppTheme.textMuted, size: 36),
-                                  SizedBox(height: 12),
-                                  Text(
-                                    'No Fragments Memorized Yet',
-                                    style: TextStyle(
-                                      color: AppTheme.textPrimary,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  SizedBox(height: 6),
-                                  Text(
-                                    'This human node is online and ready. When participants store memories in the network, this node will receive fragment copies for you to read and memorize in your biological memory.',
-                                    style: TextStyle(
-                                      color: AppTheme.textMuted,
-                                      fontSize: 12,
-                                      height: 1.3,
-                                    ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ] else ...[
-                            ...storedFragments.map((frag) => _buildRealFragmentCard(frag)),
-                          ],
-                        ],
-                      );
-                    },
-                  ),
-                ],
-              );
-            },
-          ),
-        ),
+                    );
+                  },
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -550,24 +559,29 @@ class _NodeScreenState extends State<NodeScreen> {
 
   Widget _buildHeaderMetric(String title, String val, Color color) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           title,
-          style: const TextStyle(
+          style: GoogleFonts.inter(
             color: AppTheme.textMuted,
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
+            fontSize: 9.5,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.5,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(
           val,
-          style: TextStyle(
+          style: GoogleFonts.spaceMono(
             color: color,
-            fontSize: 15,
+            fontSize: 13,
             fontWeight: FontWeight.w700,
           ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       ],
     );
@@ -580,11 +594,11 @@ class _NodeScreenState extends State<NodeScreen> {
     final expiresStr = frag.expiresAt.toString().split(' ').first;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(2),
         border: Border.all(color: AppTheme.border),
       ),
       child: Column(
@@ -595,101 +609,84 @@ class _NodeScreenState extends State<NodeScreen> {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.psychology_rounded,
-                      size: 18, color: AppTheme.primaryLight),
+                  const Icon(Icons.psychology_rounded, size: 15, color: AppTheme.textPrimary),
                   const SizedBox(width: 8),
                   Text(
-                    'FRAG-$shortId #seq${frag.sequenceNumber}',
-                    style: const TextStyle(
+                    'FRAG-$shortId #SEQ${frag.sequenceNumber}',
+                    style: GoogleFonts.spaceMono(
                       color: AppTheme.textPrimary,
-                      fontSize: 14,
+                      fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      fontFamily: 'monospace',
                     ),
                   ),
                 ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppTheme.surfaceLight,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: AppTheme.border),
-                ),
-                child: Text(
-                  '${frag.sizeBytes} B',
-                  style: const TextStyle(
-                    color: AppTheme.textSecondary,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
+              Text(
+                '${frag.sizeBytes} B',
+                style: GoogleFonts.spaceMono(
+                  color: AppTheme.textMuted,
+                  fontSize: 10,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
 
-          // Human Storage Indicator (ZERO PLAINTEXT ON DISK OR SCREEN)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
               color: AppTheme.background,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: AppTheme.primary.withValues(alpha: 0.3),
-              ),
+              borderRadius: BorderRadius.circular(2),
+              border: Border.all(color: AppTheme.border),
             ),
-            child: const Row(
+            child: Row(
               children: [
-                Icon(
+                const Icon(
                   Icons.lock_outline_rounded,
-                  size: 16,
-                  color: AppTheme.secondary,
+                  size: 13,
+                  color: AppTheme.signalOnline,
                 ),
-                SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'Stored in Human Memory',
-                    style: TextStyle(
+                    'STORED IN HUMAN MEMORY',
+                    style: GoogleFonts.spaceMono(
                       color: AppTheme.textPrimary,
-                      fontSize: 12,
+                      fontSize: 10,
                       fontWeight: FontWeight.w600,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
                 Text(
-                  'Zero disk plaintext',
-                  style: TextStyle(
+                  'ZERO DISK PLAINTEXT',
+                  style: GoogleFonts.spaceMono(
                     color: AppTheme.textMuted,
-                    fontSize: 10,
-                    fontStyle: FontStyle.italic,
+                    fontSize: 8.5,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(
-                child: Text(
-                  'Expires: $expiresStr',
-                  style: const TextStyle(
-                    color: AppTheme.textMuted,
-                    fontSize: 11,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+              Text(
+                'EXPIRES: $expiresStr',
+                style: GoogleFonts.spaceMono(
+                  color: AppTheme.textMuted,
+                  fontSize: 9.5,
                 ),
               ),
-              const SizedBox(width: 8),
-              const Text(
-                'Status: MEMORIZED (HOSTED)',
-                style: TextStyle(
-                  color: AppTheme.secondary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+              Text(
+                'MEMORIZED',
+                style: GoogleFonts.spaceMono(
+                  color: AppTheme.signalOnline,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],

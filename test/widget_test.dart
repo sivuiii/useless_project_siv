@@ -11,6 +11,7 @@ import 'package:human_server/screens/store_screen.dart';
 import 'package:human_server/services/memory_service.dart';
 import 'package:human_server/services/node_storage_service.dart';
 import 'package:human_server/theme/app_theme.dart';
+import 'package:human_server/widgets/memorization_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -249,6 +250,83 @@ void main() {
             reason: 'Sender original plaintext must NEVER be written to SharedPreferences');
       }
     });
+
+    test('confirmMemorizedFragment preserves plaintext and does not save local metadata when server fails', () async {
+      SharedPreferences.setMockInitialValues({});
+      final pending = PendingDeliveryFragment(
+        inboxId: 'inbox-fail-1',
+        assignmentId: 'assign-fail-1',
+        fragmentId: 'frag-fail-1',
+        memoryId: 'mem-fail-1',
+        sequenceNumber: 1,
+        payloadText: 'CRITICAL_PAYLOAD_DO_NOT_LOSE',
+        sizeBytes: 28,
+        expectedHash: MemoryService.calculateHash('CRITICAL_PAYLOAD_DO_NOT_LOSE'),
+        expiresAt: DateTime.now().add(const Duration(days: 7)),
+      );
+
+      // In unit test environment, Supabase client is not initialized, so confirmMemorizedFragment throws
+      expect(
+        () => MemoryService.instance.confirmMemorizedFragment(pending),
+        throwsA(isA<Exception>()),
+      );
+
+      // Invariant: Plaintext is NOT cleared on failure
+      expect(pending.payloadText, 'CRITICAL_PAYLOAD_DO_NOT_LOSE');
+      expect(pending.isCleared, isFalse);
+
+      // Invariant: Local metadata was NOT persisted
+      final stored = await NodeStorageService.instance.getFragment('frag-fail-1');
+      expect(stored, isNull);
+    });
+
+    testWidgets('MemorizationDialog renders plaintext and exits loading state on failure', (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final pending = PendingDeliveryFragment(
+        inboxId: 'inbox-dialog-1',
+        assignmentId: 'assign-dialog-1',
+        fragmentId: 'frag-dialog-1',
+        memoryId: 'mem-dialog-1',
+        sequenceNumber: 2,
+        payloadText: 'BIOLOGICAL_MEMORIZE_PAYLOAD',
+        sizeBytes: 27,
+        expectedHash: MemoryService.calculateHash('BIOLOGICAL_MEMORIZE_PAYLOAD'),
+        expiresAt: DateTime.now().add(const Duration(days: 7)),
+      );
+
+      bool onMemorizedCalled = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: Scaffold(
+            body: MemorizationDialog(
+              delivery: pending,
+              onMemorized: () {
+                onMemorizedCalled = true;
+              },
+            ),
+          ),
+        ),
+      );
+
+      // Plaintext is rendered on screen for human memorization
+      expect(find.text('BIOLOGICAL_MEMORIZE_PAYLOAD'), findsOneWidget);
+      expect(find.text('CONFIRM MEMORIZED'), findsOneWidget);
+
+      // Tap confirm button
+      await tester.tap(find.text('CONFIRM MEMORIZED'));
+      await tester.pump();
+
+      // Pump to let the async call reject
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Invariant: on failure, dialog exits loading state, shows error, and offers retry
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('RETRY CONFIRMATION'), findsOneWidget);
+      expect(onMemorizedCalled, isFalse);
+      expect(pending.payloadText, 'BIOLOGICAL_MEMORIZE_PAYLOAD');
+    });
   });
 
   group('UI Smoke Tests', () {
@@ -260,13 +338,14 @@ void main() {
           home: const MainScreen(),
         ),
       );
+      await tester.pump();
 
-      expect(find.text('Human Server'), findsOneWidget);
-      expect(find.text('Home'), findsOneWidget);
-      expect(find.text('Store'), findsOneWidget);
-      expect(find.text('Retrieve'), findsOneWidget);
-      expect(find.text('Node'), findsOneWidget);
-      expect(find.text('Profile'), findsOneWidget);
+      expect(find.text('COMMUNICATIONS DESK'), findsOneWidget);
+      expect(find.text('Desk'), findsOneWidget);
+      expect(find.text('Dispatch'), findsOneWidget);
+      expect(find.text('Recall'), findsOneWidget);
+      expect(find.text('Station'), findsOneWidget);
+      expect(find.text('Register'), findsOneWidget);
     });
 
     testWidgets('Human Server auth screen smoke test', (WidgetTester tester) async {
@@ -277,19 +356,20 @@ void main() {
           home: const AuthScreen(),
         ),
       );
-
-      expect(find.text('Human Server'), findsOneWidget);
-      expect(find.text('Sign In'), findsOneWidget);
-      expect(find.text('Create Node'), findsOneWidget);
-      expect(find.text('NODE EMAIL ADDRESS'), findsOneWidget);
-      expect(find.text('PASSWORD'), findsOneWidget);
-      expect(find.text('Sign In to Node'), findsOneWidget);
-
-      await tester.tap(find.text('Create Node'));
       await tester.pump();
 
-      expect(find.text('CONFIRM PASSWORD'), findsOneWidget);
-      expect(find.text('Create Node Account'), findsOneWidget);
+      expect(find.text('HUMAN SERVER'), findsOneWidget);
+      expect(find.text('AUTHENTICATE'), findsOneWidget);
+      expect(find.text('REGISTER STATION'), findsOneWidget);
+      expect(find.text('OPERATOR EMAIL IDENTIFIER'), findsOneWidget);
+      expect(find.text('ACCESS KEY PASSPHRASE'), findsOneWidget);
+      expect(find.text('CONNECT OPERATOR TERMINAL'), findsOneWidget);
+
+      await tester.tap(find.text('REGISTER STATION'));
+      await tester.pump();
+
+      expect(find.text('CONFIRM ACCESS KEY'), findsOneWidget);
+      expect(find.text('REGISTER STATION NODE'), findsOneWidget);
     });
 
     testWidgets('Human Server node screen smoke test', (WidgetTester tester) async {
@@ -300,10 +380,10 @@ void main() {
           home: const NodeScreen(),
         ),
       );
+      await tester.pump();
 
-      expect(find.text('My Node Telemetry'), findsOneWidget);
-      expect(find.text('RESPONSE TELEMETRY'), findsOneWidget);
-      expect(find.text('AVG RESPONSE TIME'), findsOneWidget);
+      expect(find.text('Station Telemetry'), findsOneWidget);
+      expect(find.text('RESPONSE TIME'), findsOneWidget);
       expect(find.text('RESPONSE RATE'), findsOneWidget);
       expect(find.byType(Switch), findsOneWidget);
     });
@@ -316,11 +396,12 @@ void main() {
           home: const StoreScreen(),
         ),
       );
+      await tester.pump();
 
-      expect(find.text('Store Memory'), findsOneWidget);
-      expect(find.text('Active Storage Slots'), findsOneWidget);
-      expect(find.text('MEMORY CONTENT'), findsOneWidget);
-      expect(find.text('Fragment & Store Memory'), findsOneWidget);
+      expect(find.text('Dispatch Memory'), findsOneWidget);
+      expect(find.text('ACTIVE MEMORY SLOTS'), findsOneWidget);
+      expect(find.text('TELEGRAM DISPATCH FORM'), findsOneWidget);
+      expect(find.text('DISPATCH MEMORY TELEGRAM'), findsOneWidget);
     });
   });
 }

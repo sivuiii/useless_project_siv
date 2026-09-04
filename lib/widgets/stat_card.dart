@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_theme.dart';
 
+/// Clean instrument metric card designed for flexible, responsive layout without text overflow.
 class StatCard extends StatelessWidget {
   final String label;
   final String value;
@@ -19,52 +21,61 @@ class StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = accentColor ?? AppTheme.primary;
+    final color = accentColor ?? AppTheme.textPrimary;
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.border),
+        color: AppTheme.surfaceElevated,
+        borderRadius: BorderRadius.circular(2),
+        border: Border.all(color: AppTheme.border, width: 1.0),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                label.toUpperCase(),
-                style: const TextStyle(
-                  color: AppTheme.textMuted,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.8,
+              Expanded(
+                child: Text(
+                  label.toUpperCase(),
+                  style: GoogleFonts.inter(
+                    color: AppTheme.textMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.4,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 4),
+              Icon(icon, size: 13, color: color),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           Text(
             value,
-            style: const TextStyle(
+            style: GoogleFonts.playfairDisplay(
               color: AppTheme.textPrimary,
-              fontSize: 18,
+              fontSize: 20,
               fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
+              height: 1.2,
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
           if (subtitle != null) ...[
             const SizedBox(height: 2),
             Text(
               subtitle!,
-              style: TextStyle(
-                color: color.withValues(alpha: 0.9),
-                fontSize: 11,
+              style: GoogleFonts.inter(
+                color: AppTheme.textSecondary,
+                fontSize: 10.5,
                 fontWeight: FontWeight.w500,
               ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ],
