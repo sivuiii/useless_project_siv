@@ -109,31 +109,29 @@ class MemoryService {
     // Determine dynamic target fragment count scaling with length
     final int targetCount = max(4, min(40, (m * 1.6).round()));
 
-    // Cyclic consecutive pairs: (0, 1), (1, 2), ..., (m-1, 0)
-    for (int i = 0; i < m; i++) {
+    // Linear consecutive pairs: (0, 1), (1, 2), ..., (m-2, m-1)
+    // ONLY in forward direction (strictly unidirectional)
+    for (int i = 0; i < m - 1; i++) {
       final p1 = phrases[i];
-      final p2 = phrases[(i + 1) % m];
+      final p2 = phrases[i + 1];
       fragmentSet.add('$p1 + $p2');
     }
 
-    // Cyclic skip-1 pairs: (0, 2), (1, 3), ..., (m-1, 1)
-    for (int i = 0; i < m; i++) {
-      final p1 = phrases[i];
-      final p2 = phrases[(i + 2) % m];
-      if (p1 != p2) {
-        fragmentSet.add('$p1 + $p2');
-      }
-    }
-
-    // If m >= 4, add reverse/cross pairs
+    // Non-consecutive combinations (skip-1 and cross pairs):
+    // Always added symmetrically (bidirectional) so reconstruction can unambiguously
+    // distinguish true consecutive sequence transitions from subset overlap.
     if (m >= 4) {
       for (int i = 0; i < m; i++) {
-        final p1 = phrases[(i + 2) % m];
-        final p2 = phrases[i];
+        final p1 = phrases[i];
+        final p2 = phrases[(i + 2) % m];
         if (p1 != p2) {
           fragmentSet.add('$p1 + $p2');
+          fragmentSet.add('$p2 + $p1');
         }
       }
+    } else if (m == 3) {
+      fragmentSet.add('${phrases[0]} + ${phrases[2]}');
+      fragmentSet.add('${phrases[2]} + ${phrases[0]}');
     }
 
     // If m >= 6 and more fragments needed, add 3-phrase combinations
@@ -146,16 +144,23 @@ class MemoryService {
       }
     }
 
-    // Fill up to targetCount with randomized distinct phrase pairs
-    int safety = 0;
-    while (fragmentSet.length < targetCount && safety < 200) {
-      safety++;
-      final idx1 = rng.nextInt(m);
-      var idx2 = rng.nextInt(m);
-      while (idx2 == idx1) {
-        idx2 = rng.nextInt(m);
+    // Fill up to targetCount with randomized distinct non-adjacent phrase pairs (symmetrically)
+    if (m >= 4) {
+      int safety = 0;
+      while (fragmentSet.length < targetCount && safety < 200) {
+        safety++;
+        final idx1 = rng.nextInt(m);
+        var idx2 = rng.nextInt(m);
+        int pickTries = 0;
+        while ((idx2 == idx1 || (idx1 - idx2).abs() <= 1) && pickTries < 20) {
+          idx2 = rng.nextInt(m);
+          pickTries++;
+        }
+        if ((idx1 - idx2).abs() > 1) {
+          fragmentSet.add('${phrases[idx1]} + ${phrases[idx2]}');
+          fragmentSet.add('${phrases[idx2]} + ${phrases[idx1]}');
+        }
       }
-      fragmentSet.add('${phrases[idx1]} + ${phrases[idx2]}');
     }
 
     final List<String> result = fragmentSet.toList();
@@ -204,8 +209,10 @@ class MemoryService {
       return cleanFragments.first;
     }
 
-    // Parse all fragments into phrase transitions
-    final List<List<String>> parsedFragments = [];
+    // Parse fragments into ordered phrase tuples
+    final Set<String> allPhrases = {};
+    final Set<String> directPairs = {};
+
     for (final frag in cleanFragments) {
       if (frag.contains('+')) {
         final parts = frag
@@ -213,72 +220,68 @@ class MemoryService {
             .map((p) => p.trim())
             .where((p) => p.isNotEmpty)
             .toList();
-        if (parts.isNotEmpty) {
-          parsedFragments.add(parts);
+        for (int i = 0; i < parts.length; i++) {
+          allPhrases.add(parts[i]);
+          if (i + 1 < parts.length) {
+            directPairs.add('${parts[i]}|||${parts[i + 1]}');
+          }
         }
       } else {
-        parsedFragments.add([frag]);
+        allPhrases.add(frag);
       }
     }
 
-    if (parsedFragments.isEmpty) return '';
+    if (allPhrases.isEmpty) return '';
+    if (allPhrases.length == 1) return allPhrases.first;
 
-    // Build directed transition pairs: A -> B
-    final Map<String, Set<String>> forwardTransitions = {};
-    final Map<String, Set<String>> backwardTransitions = {};
-    final Set<String> allPhrases = {};
+    // Filter to ONLY unidirectional transitions:
+    // Consecutive edges A -> B are unidirectional (B -> A never exists).
+    // Skip/cross edges A -> C are bidirectional (C -> A also exists).
+    final Map<String, String> forward = {};
+    final Map<String, String> backward = {};
 
-    for (final parts in parsedFragments) {
-      for (int i = 0; i < parts.length; i++) {
-        allPhrases.add(parts[i]);
-        if (i + 1 < parts.length) {
-          final from = parts[i];
-          final to = parts[i + 1];
-          forwardTransitions.putIfAbsent(from, () => {}).add(to);
-          backwardTransitions.putIfAbsent(to, () => {}).add(from);
-        }
+    for (final pair in directPairs) {
+      final split = pair.split('|||');
+      final from = split[0];
+      final to = split[1];
+      final reverse = '$to|||$from';
+
+      if (!directPairs.contains(reverse)) {
+        forward[from] = to;
+        backward[to] = from;
       }
     }
 
-    // Seed chain with the first multi-phrase fragment
-    final seedParts = parsedFragments.firstWhere(
-      (p) => p.length >= 2,
-      orElse: () => parsedFragments.first,
-    );
-    final List<String> chain = List<String>.from(seedParts);
-
-    bool changed = true;
-    int iterations = 0;
-    while (changed && iterations < 100) {
-      changed = false;
-      iterations++;
-
-      // Extend tail forward
-      final tail = chain.last;
-      final nextCandidates = forwardTransitions[tail] ?? {};
-      for (final next in nextCandidates) {
-        if (!chain.contains(next)) {
-          chain.add(next);
-          changed = true;
-          break;
-        }
-      }
-
-      // Extend head backward
-      final head = chain.first;
-      final prevCandidates = backwardTransitions[head] ?? {};
-      for (final prev in prevCandidates) {
-        if (!chain.contains(prev)) {
-          chain.insert(0, prev);
-          changed = true;
-          break;
-        }
-      }
-    }
-
-    // Append any isolated phrases that didn't connect
+    // Find the head of the chain: node with no incoming unidirectional edge
+    String? startNode;
     for (final phrase in allPhrases) {
-      if (!chain.contains(phrase)) {
+      if (!backward.containsKey(phrase) && forward.containsKey(phrase)) {
+        startNode = phrase;
+        break;
+      }
+    }
+
+    // If all unidirectional edges form a closed cycle (e.g. legacy fragments with wrap),
+    // pick the node starting with capital/sentence start or first phrase
+    startNode ??= allPhrases.firstWhere(
+      (p) => forward.containsKey(p),
+      orElse: () => allPhrases.first,
+    );
+
+    // Follow forward chain
+    final List<String> chain = [startNode];
+    final Set<String> visited = {startNode};
+
+    while (forward.containsKey(chain.last)) {
+      final next = forward[chain.last]!;
+      if (visited.contains(next)) break;
+      chain.add(next);
+      visited.add(next);
+    }
+
+    // Add any remaining phrases that were not connected
+    for (final phrase in allPhrases) {
+      if (!visited.contains(phrase)) {
         chain.add(phrase);
       }
     }

@@ -632,4 +632,134 @@ void main() {
       expect(find.text('DISPATCH MEMORY TELEGRAM'), findsOneWidget);
     });
   });
+
+  group('MVP Retrieval Flow & Reconstruction Tests', () {
+    test('Reconstructs from simple overlapping phrases', () {
+      final fragments = [
+        'THE SECRET CODE + CODE IS 4096',
+        'IS 4096 + 4096 VERIFIED',
+      ];
+      final reconstructed = MemoryService.reconstructFromFragments(fragments);
+      expect(reconstructed, contains('THE SECRET CODE'));
+      expect(reconstructed, contains('IS 4096'));
+    });
+
+    test('Reconstructs original message from generated overlapping fragments', () {
+      const original = 'THE MEETING IS AT 4:30 PM IN ROOM 204';
+      final fragments = MemoryService.fragmentText(original, random: Random(42));
+      expect(fragments, isNotEmpty);
+
+      final reconstructed = MemoryService.reconstructFromFragments(fragments);
+      expect(reconstructed, equals(original));
+    });
+
+    test('Reconstructs multi-word sentences from random fragment sets', () {
+      const messages = [
+        'HELLO WORLD',
+        'SYSTEM STATUS ALL CIRCUITS FUNCTIONAL',
+        'Biological station nodes hold distributed memory fragments',
+      ];
+
+      for (final msg in messages) {
+        final fragments = MemoryService.fragmentText(msg, random: Random(123));
+        final reconstructed = MemoryService.reconstructFromFragments(fragments);
+        expect(reconstructed.toLowerCase(), equals(msg.toLowerCase()));
+      }
+    });
+
+    testWidgets('RecallSubmissionDialog renders recall prompt and rejects empty submission', (WidgetTester tester) async {
+      final recall = PendingRecallFragment(
+        retrievalId: 'ret-123',
+        assignmentId: 'assign-456',
+        fragmentId: 'frag-789',
+        memoryId: 'mem-000',
+        sequenceNumber: 1,
+        sizeBytes: 15,
+        expectedHash: MemoryService.calculateHash('SECRET PHRASE'),
+        retrievalCreatedAt: DateTime.now(),
+      );
+
+      bool recalled = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: Scaffold(
+            body: RecallSubmissionDialog(
+              recall: recall,
+              onSuccess: () {
+                recalled = true;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('RECALL SIGNAL RECEIVED'), findsOneWidget);
+      expect(find.text('SEQ #1'), findsOneWidget);
+      expect(find.text('15 BYTES EXPECTED'), findsOneWidget);
+      expect(find.text('SUBMIT RECALL'), findsOneWidget);
+
+      // Tap submit with empty text
+      await tester.tap(find.text('SUBMIT RECALL'));
+      await tester.pump();
+
+      // Invariant: empty text rejected, does not succeed
+      expect(find.text('Please enter your remembered fragment text.'), findsOneWidget);
+      expect(recalled, isFalse);
+    });
+
+    testWidgets('RecallSubmissionDialog handles server rejection gracefully', (WidgetTester tester) async {
+      final recall = PendingRecallFragment(
+        retrievalId: 'ret-fail',
+        assignmentId: 'assign-fail',
+        fragmentId: 'frag-fail',
+        memoryId: 'mem-fail',
+        sequenceNumber: 2,
+        sizeBytes: 20,
+        expectedHash: MemoryService.calculateHash('PROPER PHRASE'),
+        retrievalCreatedAt: DateTime.now(),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: Scaffold(
+            body: RecallSubmissionDialog(
+              recall: recall,
+              onSuccess: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      // Enter text and submit
+      await tester.enterText(find.byType(TextField), 'WRONG PLAINTEXT ENTRY');
+      await tester.tap(find.text('SUBMIT RECALL'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      // Invariant: does not crash or stay loading, shows error
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('SUBMIT RECALL'), findsOneWidget);
+    });
+
+    testWidgets('RetrieveScreen renders target memory input and retrieval CTA', (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: const RetrieveScreen(),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('RECALL SIGNAL & RECONSTRUCT'), findsOneWidget);
+      expect(find.text('SEMANTIC RECALL TELEGRAPH'), findsOneWidget);
+      expect(find.text('TARGET MEMORY ID'), findsOneWidget);
+      expect(find.text('INITIATE RETRIEVAL SIGNAL'), findsOneWidget);
+    });
+  });
 }
