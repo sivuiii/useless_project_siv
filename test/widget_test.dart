@@ -329,6 +329,131 @@ void main() {
     });
   });
 
+  group('Human Node 5-Fragment Capacity & Retrieval Forgetting Tests', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      NodeStorageService.instance.resetForTesting();
+    });
+
+    tearDown(() {
+      NodeStorageService.instance.resetForTesting();
+    });
+
+    test('Node capacity evaluation: 0 hosted fragments can receive one', () {
+      expect(MemoryService.canNodeAcceptFragment(0), isTrue);
+    });
+
+    test('Node capacity evaluation: 4 hosted fragments can receive one', () {
+      expect(MemoryService.canNodeAcceptFragment(4), isTrue);
+    });
+
+    test('Node capacity evaluation: 5 hosted fragments cannot receive another', () {
+      expect(MemoryService.canNodeAcceptFragment(5), isFalse);
+    });
+
+    test('Full and over-capacity nodes are excluded from assignment', () {
+      expect(MemoryService.canNodeAcceptFragment(5), isFalse);
+      expect(MemoryService.canNodeAcceptFragment(6), isFalse);
+      expect(MemoryService.canNodeAcceptFragment(12), isFalse);
+    });
+
+    test('Forgetting a successfully recalled fragment frees one slot', () async {
+      // Populate 5 hosted fragments into node storage
+      for (int i = 1; i <= 5; i++) {
+        await NodeStorageService.instance.saveFragment(
+          StoredNodeFragment(
+            fragmentId: 'frag-slot-$i',
+            memoryId: 'mem-test',
+            sequenceNumber: i,
+            sizeBytes: 10,
+            receivedAt: DateTime.now(),
+            expiresAt: DateTime.now().add(const Duration(days: 180)),
+            assignmentId: 'assign-slot-$i',
+            verificationHash: 'hash-$i',
+          ),
+        );
+      }
+
+      // Verify node is currently at full capacity (5 / 5)
+      expect(NodeStorageService.instance.activeHostedCount, 5);
+      expect(NodeStorageService.instance.isCapacityFull, isTrue);
+      expect(NodeStorageService.instance.canReceiveFragment, isFalse);
+
+      // Human node recalls fragment 1: forgets it locally
+      await NodeStorageService.instance.deleteFragment('frag-slot-1');
+
+      // Slot is freed: node now has 4 hosted fragments and can receive another
+      expect(NodeStorageService.instance.activeHostedCount, 4);
+      expect(NodeStorageService.instance.isCapacityFull, isFalse);
+      expect(NodeStorageService.instance.canReceiveFragment, isTrue);
+      expect(NodeStorageService.instance.remainingSlots, 1);
+    });
+
+    test('Failed retrieval does NOT delete the hosted fragment', () async {
+      final fragment = StoredNodeFragment(
+        fragmentId: 'frag-safe-recall',
+        memoryId: 'mem-safe-recall',
+        sequenceNumber: 1,
+        sizeBytes: 15,
+        receivedAt: DateTime.now(),
+        expiresAt: DateTime.now().add(const Duration(days: 180)),
+        assignmentId: 'assign-safe-recall',
+        verificationHash: 'hash-safe',
+      );
+
+      await NodeStorageService.instance.saveFragment(fragment);
+      expect(await NodeStorageService.instance.hasFragment('frag-safe-recall'), isTrue);
+
+      // Attempting to forget with no active Supabase connection throws
+      expect(
+        () => MemoryService.instance.forgetRecalledFragment(
+          assignmentId: 'assign-safe-recall',
+          fragmentId: 'frag-safe-recall',
+        ),
+        throwsA(isA<Exception>()),
+      );
+
+      // Invariant: Failed retrieval MUST NOT delete the hosted fragment from local storage
+      expect(await NodeStorageService.instance.hasFragment('frag-safe-recall'), isTrue);
+      final retrieved = await NodeStorageService.instance.getFragment('frag-safe-recall');
+      expect(retrieved, isNotNull);
+      expect(retrieved!.fragmentId, 'frag-safe-recall');
+    });
+
+    testWidgets('NodeScreen renders memory slots used and station full indicator', (WidgetTester tester) async {
+      tester.binding.setSurfaceSize(const Size(1000, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      // Fill 5 slots
+      for (int i = 1; i <= 5; i++) {
+        await NodeStorageService.instance.saveFragment(
+          StoredNodeFragment(
+            fragmentId: 'frag-full-$i',
+            memoryId: 'mem-full',
+            sequenceNumber: i,
+            sizeBytes: 12,
+            receivedAt: DateTime.now(),
+            expiresAt: DateTime.now().add(const Duration(days: 180)),
+            assignmentId: 'assign-full-$i',
+            verificationHash: 'hash-$i',
+          ),
+        );
+      }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: const NodeScreen(),
+        ),
+      );
+      await tester.pump();
+
+      // Verify slot usage and station full banner are rendered
+      expect(find.text('5 / 5 MEMORY SLOTS USED'), findsOneWidget);
+      expect(find.textContaining('STATION FULL (5/5 SLOTS)'), findsOneWidget);
+    });
+  });
+
   group('UI Smoke Tests', () {
     testWidgets('Human Server main UI smoke test', (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues({});

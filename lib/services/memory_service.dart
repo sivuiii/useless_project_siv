@@ -307,6 +307,21 @@ class MemoryService {
               'HASH REJECTED: Hash mismatch for fragment ${delivery.fragmentId}! Expected: ${delivery.expectedHash}, Actual: $actualHash');
           continue;
         }
+
+        // Filter out if this fragment is already memorized in local storage
+        if (await NodeStorageService.instance.hasFragment(delivery.fragmentId)) {
+          debugPrint(
+              'DELIVERY FILTERED: Fragment ${delivery.fragmentId} is already memorized locally.');
+          continue;
+        }
+
+        // Filter out if node is already at full capacity
+        if (NodeStorageService.instance.isCapacityFull) {
+          debugPrint(
+              'DELIVERY FILTERED: Node is at maximum capacity (${NodeStorageService.instance.activeHostedCount}/5).');
+          continue;
+        }
+
         debugPrint('HASH VERIFIED: Canonical SHA-256 matches payload for fragment ${delivery.fragmentId}');
         pendingList.add(delivery);
       }
@@ -386,6 +401,55 @@ class MemoryService {
   Future<int> syncDeliveriesForNode() async {
     final pending = await fetchPendingDeliveriesForNode();
     return pending.length;
+  }
+
+  /// Evaluates whether a human node can accept an additional fragment assignment
+  /// based on the strict 5-fragment capacity rule.
+  static bool canNodeAcceptFragment(int currentHostedCount) {
+    return currentHostedCount < NodeStorageService.maxNodeCapacity;
+  }
+
+  /// Forgets a successfully recalled fragment:
+  /// 1. Calls Supabase RPC 'retire_recalled_fragment_assignment' to transition
+  ///    the server assignment status to 'recalled', freeing the node's hosting slot.
+  /// 2. Deletes the node's local metadata-only record from NodeStorageService.
+  /// 
+  /// [Crucial Invariant]:
+  /// If the server retrieval/confirmation fails, the local metadata is NOT deleted,
+  /// preserving custody so the fragment is not lost.
+  Future<void> forgetRecalledFragment({
+    required String assignmentId,
+    required String fragmentId,
+  }) async {
+    final client = _supabase;
+    if (client == null) {
+      throw const AuthException('Supabase client not initialized or no connection.');
+    }
+
+    if (assignmentId.trim().isEmpty) {
+      throw ArgumentError('assignmentId cannot be empty.');
+    }
+
+    // Step 1: Server confirmation first
+    debugPrint('RECALL RETIREMENT: Calling retire_recalled_fragment_assignment for $assignmentId...');
+    final response = await client.rpc(
+      'retire_recalled_fragment_assignment',
+      params: {'p_assignment_id': assignmentId},
+    ).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () {
+        throw TimeoutException('Server timed out while confirming fragment recall retirement.');
+      },
+    );
+
+    if (response != true) {
+      throw StateError('Server failed to retire fragment assignment (response: $response)');
+    }
+    debugPrint('RECALL CONFIRMED: Server retired assignment $assignmentId (capacity slot freed)');
+
+    // Step 2: ONLY upon verified server confirmation, forget local metadata
+    await NodeStorageService.instance.deleteFragment(fragmentId);
+    debugPrint('FRAGMENT FORGOTTEN: Recalled fragment $fragmentId purged from local biological vault.');
   }
 
   /// Fetches count of active memories for current user

@@ -30,9 +30,11 @@ class NodeService {
 
   NodeModel? get currentNode => currentNodeNotifier.value;
 
-  /// Resets the current node state (e.g. on sign out)
+  /// Resets the current node state (e.g. on sign out or station reset)
   void clear() {
     currentNodeNotifier.value = null;
+    pendingDeliveriesNotifier.value = [];
+    isSyncingNotifier.value = false;
   }
 
   /// Fetches the current user's node from Supabase, or returns the cached node.
@@ -217,6 +219,7 @@ class NodeService {
     final client = _supabase;
     final user = _currentUser;
     if (client == null || user == null) {
+      clear();
       return const NodeSyncResult(
         rebalancedCount: 0,
         fulfilledCount: 0,

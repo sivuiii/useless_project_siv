@@ -19,10 +19,25 @@ class NodeStorageService {
   static const String _legacyKeyPrefix = 'human_server_fragment_';
   static const String _indexKey = 'human_server_fragment_index';
 
+  /// Strict maximum active hosted/memorized fragments allowed per human node
+  static const int maxNodeCapacity = 5;
+
   final ValueNotifier<List<StoredNodeFragment>> storedFragmentsNotifier =
       ValueNotifier<List<StoredNodeFragment>>([]);
 
+  int get activeHostedCount => storedFragmentsNotifier.value.length;
+  bool get isCapacityFull => activeHostedCount >= maxNodeCapacity;
+  bool get isOverCapacity => activeHostedCount > maxNodeCapacity;
+  bool get canReceiveFragment => activeHostedCount < maxNodeCapacity;
+  int get remainingSlots => (maxNodeCapacity - activeHostedCount).clamp(0, maxNodeCapacity);
+
   SharedPreferences? _prefs;
+
+  @visibleForTesting
+  void resetForTesting() {
+    _prefs = null;
+    storedFragmentsNotifier.value = [];
+  }
 
   Future<SharedPreferences> _getPrefs() async {
     _prefs ??= await SharedPreferences.getInstance();
@@ -171,5 +186,34 @@ class NodeStorageService {
     }
 
     return deletedCount;
+  }
+
+  /// Clears ALL local fragment metadata records maintained by this service on this device.
+  /// 
+  /// [Development & Testing]:
+  /// Used to reset local station metadata (e.g. after a test database reset).
+  /// - Clears ONLY local metadata records and keys in SharedPreferences.
+  /// - Does NOT touch Supabase, user auth, remote memories, assignments, or schemas.
+  /// - Does NOT store or recover any plaintext.
+  /// - Immediately notifies listeners with an empty list so the UI reflects 0/5 slots used.
+  Future<void> clearAllMetadata() async {
+    final prefs = await _getPrefs();
+    final indexList = prefs.getStringList(_indexKey) ?? [];
+
+    for (final fragmentId in indexList) {
+      await prefs.remove('$_storageKeyPrefix$fragmentId');
+      await prefs.remove('$_legacyKeyPrefix$fragmentId');
+    }
+
+    // Also scan all keys to ensure no orphaned fragment keys remain
+    final allKeys = prefs.getKeys();
+    for (final key in allKeys) {
+      if (key.startsWith(_storageKeyPrefix) || key.startsWith(_legacyKeyPrefix)) {
+        await prefs.remove(key);
+      }
+    }
+
+    await prefs.remove(_indexKey);
+    storedFragmentsNotifier.value = [];
   }
 }

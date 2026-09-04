@@ -27,14 +27,33 @@ class _NodeScreenState extends State<NodeScreen> {
   void initState() {
     super.initState();
     NodeStorageService.instance.getStoredFragments();
-    NodeService.instance.syncNode().then((result) {
-      if (mounted && result.pendingDeliveries.isNotEmpty) {
-        _promptMemorization(result.pendingDeliveries.first);
+    NodeService.instance.syncNode().then((result) async {
+      if (!mounted) return;
+      if (result.pendingDeliveries.isNotEmpty) {
+        final first = result.pendingDeliveries.first;
+        if (!NodeStorageService.instance.isCapacityFull &&
+            !(await NodeStorageService.instance.hasFragment(first.fragmentId))) {
+          if (mounted) {
+            _promptMemorization(first);
+          }
+        }
       }
     });
   }
 
-  void _promptMemorization(PendingDeliveryFragment delivery) {
+  Future<void> _promptMemorization(PendingDeliveryFragment delivery) async {
+    if (!mounted) return;
+
+    // Safety checks: do not prompt if station is at full capacity or already memorized
+    if (NodeStorageService.instance.isCapacityFull) {
+      debugPrint('Station is at capacity (${NodeStorageService.instance.activeHostedCount}/5); skipping memorization prompt');
+      return;
+    }
+    if (await NodeStorageService.instance.hasFragment(delivery.fragmentId)) {
+      debugPrint('Fragment ${delivery.fragmentId} already memorized; skipping prompt');
+      return;
+    }
+
     if (!mounted) return;
     MemorizationDialog.show(
       context,
@@ -83,7 +102,13 @@ class _NodeScreenState extends State<NodeScreen> {
       );
 
       if (result.pendingDeliveries.isNotEmpty) {
-        _promptMemorization(result.pendingDeliveries.first);
+        final first = result.pendingDeliveries.first;
+        if (!NodeStorageService.instance.isCapacityFull &&
+            !(await NodeStorageService.instance.hasFragment(first.fragmentId))) {
+          if (mounted) {
+            _promptMemorization(first);
+          }
+        }
       }
     }
   }
@@ -474,34 +499,89 @@ class _NodeScreenState extends State<NodeScreen> {
                         ValueListenableBuilder<List<StoredNodeFragment>>(
                           valueListenable: NodeStorageService.instance.storedFragmentsNotifier,
                           builder: (context, storedFragments, _) {
+                            final count = storedFragments.length;
+                            final maxCap = NodeStorageService.maxNodeCapacity;
+                            final isFull = count >= maxCap;
+                            final isOverCapacity = count > maxCap;
+
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
+                                Wrap(
+                                  alignment: WrapAlignment.spaceBetween,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  spacing: 8,
+                                  runSpacing: 4,
                                   children: [
-                                    Expanded(
-                                      child: Text(
-                                        'BIOLOGICAL STORAGE VAULT',
-                                        style: GoogleFonts.inter(
-                                          color: AppTheme.textMuted,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w600,
-                                          letterSpacing: 0.5,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
+                                    Text(
+                                      'BIOLOGICAL STORAGE VAULT',
+                                      style: GoogleFonts.inter(
+                                        color: AppTheme.textMuted,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.5,
                                       ),
                                     ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      '${storedFragments.length} HOSTED',
-                                      style: GoogleFonts.spaceMono(
-                                        color: AppTheme.textSecondary,
-                                        fontSize: 10,
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.surfaceElevated,
+                                        borderRadius: BorderRadius.circular(3),
+                                        border: Border.all(
+                                          color: isFull ? AppTheme.signalWarning : AppTheme.border,
+                                          width: 0.8,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        '$count / $maxCap MEMORY SLOTS USED',
+                                        style: GoogleFonts.spaceMono(
+                                          color: isFull ? AppTheme.signalWarning : AppTheme.brassAccent,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
                                 const SizedBox(height: 10),
+
+                                if (isFull) ...[
+                                  Container(
+                                    width: double.infinity,
+                                    margin: const EdgeInsets.only(bottom: 10),
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.signalWarning.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(3),
+                                      border: Border.all(
+                                        color: AppTheme.signalWarning.withValues(alpha: 0.4),
+                                        width: 1.0,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.shield_outlined,
+                                          size: 15,
+                                          color: AppTheme.signalWarning,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            isOverCapacity
+                                                ? 'STATION OVER CAPACITY ($count/$maxCap): Preserving existing hosted fragments. New assignments are paused until recalled.'
+                                                : 'STATION FULL (5/5 SLOTS): Node is currently at full capacity. New assignments will route to other peer stations until fragments are recalled.',
+                                            style: GoogleFonts.inter(
+                                              color: AppTheme.textSecondary,
+                                              fontSize: 11,
+                                              height: 1.3,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
 
                                 if (storedFragments.isEmpty) ...[
                                   Container(
