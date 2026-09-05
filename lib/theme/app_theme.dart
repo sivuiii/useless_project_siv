@@ -136,7 +136,7 @@ class AppTheme {
         ),
         iconTheme: const IconThemeData(color: textPrimary, size: 20),
       ),
-      cardTheme: CardTheme(
+      cardTheme: CardThemeData(
         color: surface,
         elevation: 0,
         shape: RoundedRectangleBorder(

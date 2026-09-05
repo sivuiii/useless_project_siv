@@ -351,8 +351,12 @@ class _NodeScreenState extends State<NodeScreen> {
                                           value: isOnline,
                                           onChanged: (_) => _toggleNodeStatus(isOnline),
                                           activeTrackColor: AppTheme.signalOnline.withValues(alpha: 0.5),
-                                          activeColor: AppTheme.signalOnline,
-                                          inactiveThumbColor: AppTheme.textMuted,
+                                          thumbColor: WidgetStateProperty.resolveWith((states) {
+                                            if (states.contains(WidgetState.selected)) {
+                                              return AppTheme.signalOnline;
+                                            }
+                                            return AppTheme.textMuted;
+                                          }),
                                           inactiveTrackColor: AppTheme.border,
                                         ),
                                 ],
