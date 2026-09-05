@@ -217,7 +217,7 @@ None Used
 
 # Video
 
-[Demo Video Link: To be attached with submission]
+(https://github.com/sivuiii/useless_project_siv/blob/main/VidSubmissionSiv.mkv)
 *The demo video demonstrates the complete Human Server workflow: entering a message, instant sender plaintext clearance, distributing overlapping packets to distinct human nodes, human memorization, capacity slot tracking, requesting recovery, collecting recall responses, consensus reconstruction, and local owner history preservation.*
 
 # Additional Demos
