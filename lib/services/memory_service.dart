@@ -7,10 +7,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/pending_delivery_fragment.dart';
 import '../models/pending_recall_fragment.dart';
+import '../models/recovered_memory.dart';
 import '../models/retrieval_status.dart';
 import '../models/stored_node_fragment.dart';
 import '../models/user_stored_memory.dart';
 import 'node_storage_service.dart';
+import 'recovery_history_service.dart';
 
 class FragmentPayload {
   final String text;
@@ -781,7 +783,7 @@ class MemoryService {
     }
   }
 
-  /// Lists active memories stored by the current user for retrieval selection
+  /// Lists active, unrecovered memories stored by the current user for retrieval selection
   Future<List<UserStoredMemory>> getUserStoredMemories() async {
     final client = _supabase;
     if (client == null || _currentUser == null) return [];
@@ -789,9 +791,21 @@ class MemoryService {
     try {
       final response = await client.rpc('get_user_stored_memories');
       final list = (response as List<dynamic>?) ?? [];
-      return list
+      final memories = list
           .map((item) => UserStoredMemory.fromMap(Map<String, dynamic>.from(item as Map)))
+          .where((m) => !m.isCompleted)
           .toList();
+
+      // Filter out any memories already in the local recovery history
+      final List<UserStoredMemory> filtered = [];
+      for (final mem in memories) {
+        final alreadyRecovered =
+            await RecoveryHistoryService.instance.hasRecovered(mem.id);
+        if (!alreadyRecovered) {
+          filtered.add(mem);
+        }
+      }
+      return filtered;
     } catch (e) {
       debugPrint('Error fetching user stored memories: $e');
       return [];
@@ -808,6 +822,13 @@ class MemoryService {
     final trimmed = memoryId.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError('Memory ID cannot be empty.');
+    }
+
+    // Client-side guard: verify memory has not already completed recovery
+    if (await RecoveryHistoryService.instance.hasRecovered(trimmed)) {
+      throw StateError(
+        'This memory has already completed recovery and cannot be recovered again.',
+      );
     }
 
     final response = await client.rpc(
@@ -835,17 +856,44 @@ class MemoryService {
     return RetrievalStatusResult.fromMap(map);
   }
 
-  /// Completes a retrieval session and immediately PURGES all temporary recall plaintext rows from the database
-  Future<void> completeMemoryRetrieval(String retrievalId) async {
+  /// Completes a retrieval session:
+  /// 1. Optionally saves the reconstructed plaintext into the owner device's local recovery history.
+  /// 2. Calls Supabase RPC to transition memory to 'recovered' and immediately PURGES all temporary recall plaintext rows.
+  /// 3. Refreshes active memories count notifier.
+  Future<void> completeMemoryRetrieval(
+    String retrievalId, {
+    String? memoryId,
+    String? reconstructedPlaintext,
+    int packetCount = 0,
+  }) async {
     final client = _supabase;
     if (client == null || _currentUser == null) return;
 
     try {
+      if (memoryId != null &&
+          reconstructedPlaintext != null &&
+          reconstructedPlaintext.trim().isNotEmpty) {
+        final entry = RecoveredMemory(
+          memoryId: memoryId,
+          reconstructedPlaintext: reconstructedPlaintext.trim(),
+          recoveredAt: DateTime.now(),
+          packetCount: packetCount,
+        );
+        await RecoveryHistoryService.instance.saveRecoveredMemory(entry);
+        debugPrint(
+          'RECOVERY HISTORY SAVED: Memory $memoryId plaintext stored in owner local history',
+        );
+      }
+
       await client.rpc(
         'complete_memory_retrieval',
         params: {'p_retrieval_id': retrievalId},
       );
-      debugPrint('RETRIEVAL COMPLETED: Server temporary recall plaintext buffer purged for $retrievalId');
+      debugPrint(
+        'RETRIEVAL COMPLETED: Server temporary recall plaintext buffer purged for $retrievalId',
+      );
+
+      await getActiveMemoriesCount(forceRefresh: true);
     } catch (e) {
       debugPrint('Error completing memory retrieval: $e');
     }

@@ -6,6 +6,8 @@ class UserStoredMemory {
   final int packetCount;
   final int memorizedCount;
   final String status;
+  final String retrievalStatus;
+  final String? activeRetrievalId;
 
   const UserStoredMemory({
     required this.id,
@@ -15,7 +17,14 @@ class UserStoredMemory {
     this.packetCount = 0,
     this.memorizedCount = 0,
     required this.status,
+    this.retrievalStatus = 'ready',
+    this.activeRetrievalId,
   });
+
+  bool get isUnderRecovery => retrievalStatus == 'under_recovery';
+  bool get isReady => retrievalStatus == 'ready';
+  bool get isCompleted =>
+      retrievalStatus == 'completed' || status == 'recovered';
 
   factory UserStoredMemory.fromMap(Map<String, dynamic> map) {
     final frags = (map['packet_count'] as num?)?.toInt() ??
@@ -34,6 +43,8 @@ class UserStoredMemory {
       packetCount: frags,
       memorizedCount: memorized,
       status: map['status'] as String? ?? 'active',
+      retrievalStatus: map['retrieval_status'] as String? ?? 'ready',
+      activeRetrievalId: map['active_retrieval_id'] as String?,
     );
   }
 

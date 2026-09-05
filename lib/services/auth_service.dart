@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_profile.dart';
 import 'node_service.dart';
 import 'node_storage_service.dart';
+import 'recovery_history_service.dart';
 
 class AuthService {
   AuthService._();
@@ -73,6 +74,7 @@ class AuthService {
       await ensureProfileExists(response.user!);
       await NodeService.instance.registerNodeIfNeeded();
       await NodeStorageService.instance.getStoredFragments(userId: response.user!.id);
+      await RecoveryHistoryService.instance.getHistory(userId: response.user!.id);
     }
 
     return response;
@@ -87,6 +89,7 @@ class AuthService {
     currentProfileNotifier.value = null;
     NodeService.instance.clear();
     await NodeStorageService.instance.onSignOut();
+    RecoveryHistoryService.instance.onSignOut();
   }
 
   /// Ensures a profile row exists in the `profiles` table.
@@ -120,11 +123,14 @@ class AuthService {
         }
       }
 
+      final now = DateTime.now().toUtc().toIso8601String();
       final initialProfile = {
         'id': user.id,
         'username': derivedUsername,
         'credits': 0,
         'reliability': 1.0,
+        'created_at': now,
+        'updated_at': now,
       };
 
       // 3. Upsert new profile into Supabase (compatible with trigger & manual creation)
