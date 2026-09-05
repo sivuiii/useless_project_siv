@@ -44,19 +44,16 @@ jobs:
       - name: Prepare Android artifact
         shell: bash
         run: |
+          rm -rf artifacts
           mkdir -p artifacts
-          TAG_NAME="${GITHUB_REF_NAME:-v1.0.0}"
-          cp build/app/outputs/flutter-apk/app-release.apk "artifacts/HumanServer-Android-${TAG_NAME}.apk"
-          # Also guarantee canonical v1.0.0 name if tag is v1.0.0
-          if [ "${TAG_NAME}" = "v1.0.0" ]; then
-            cp "artifacts/HumanServer-Android-${TAG_NAME}.apk" "artifacts/HumanServer-Android-v1.0.0.apk"
-          fi
+          apkPath="artifacts/HumanServer-Android-v1.0.0.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "$apkPath"
 
       - name: Upload Android artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-release
-          path: artifacts/*.apk
+          path: artifacts/HumanServer-Android-v1.0.0.apk
           retention-days: 1
 
   build-windows:
@@ -88,19 +85,16 @@ jobs:
       - name: Package Windows ZIP
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path artifacts
-          $tag = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "v1.0.0" }
-          $zipName = "artifacts/HumanServer-Windows-$tag.zip"
-          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath $zipName -Force
-          if ($tag -eq "v1.0.0") {
-            Copy-Item $zipName -Destination "artifacts/HumanServer-Windows-v1.0.0.zip" -Force
-          }
+          if (Test-Path "artifacts") { Remove-Item -Recurse -Force "artifacts" }
+          New-Item -ItemType Directory -Force -Path "artifacts"
+          $zipPath = "artifacts/HumanServer-Windows-v1.0.0.zip"
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" -DestinationPath $zipPath -Force
 
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-release
-          path: artifacts/*.zip
+          path: artifacts/HumanServer-Windows-v1.0.0.zip
           retention-days: 1
 
   publish-release:
