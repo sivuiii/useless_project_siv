@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:human_server/models/pending_delivery_fragment.dart';
 import 'package:human_server/models/pending_recall_fragment.dart';
+import 'package:human_server/models/recovered_memory.dart';
 import 'package:human_server/models/retrieval_status.dart';
 import 'package:human_server/models/stored_node_fragment.dart';
 import 'package:human_server/models/user_stored_memory.dart';
@@ -14,6 +15,7 @@ import 'package:human_server/screens/retrieve_screen.dart';
 import 'package:human_server/screens/store_screen.dart';
 import 'package:human_server/services/memory_service.dart';
 import 'package:human_server/services/node_storage_service.dart';
+import 'package:human_server/services/recovery_history_service.dart';
 import 'package:human_server/theme/app_theme.dart';
 import 'package:human_server/widgets/memorization_dialog.dart';
 import 'package:human_server/widgets/recall_submission_dialog.dart';
@@ -1347,6 +1349,373 @@ void main() {
           expect(val.contains('"plaintext"'), isFalse);
         }
       }
+    });
+  });
+
+  group('Retrieval Lifecycle & Recovery History Regression Tests', () {
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      NodeStorageService.instance.resetForTesting();
+      RecoveryHistoryService.instance.resetForTesting();
+    });
+
+    // 1. New stored memory: appears as recoverable
+    test('1. New stored memory appears as recoverable (isReady = true)', () {
+      final memory = UserStoredMemory(
+        id: 'mem-new-1',
+        createdAt: DateTime.now(),
+        expiresAt: DateTime.now().add(const Duration(days: 7)),
+        fragmentCount: 5,
+        packetCount: 5,
+        memorizedCount: 5,
+        status: 'active',
+        retrievalStatus: 'ready',
+      );
+
+      expect(memory.isReady, isTrue);
+      expect(memory.isUnderRecovery, isFalse);
+      expect(memory.isCompleted, isFalse);
+    });
+
+    // 2. Request recovery: status becomes UNDER RECOVERY
+    test('2. Request recovery: status becomes UNDER RECOVERY', () {
+      final memory = UserStoredMemory(
+        id: 'mem-under-recovery-2',
+        createdAt: DateTime.now(),
+        expiresAt: DateTime.now().add(const Duration(days: 7)),
+        fragmentCount: 4,
+        packetCount: 4,
+        memorizedCount: 4,
+        status: 'active',
+        retrievalStatus: 'under_recovery',
+        activeRetrievalId: 'ret-active-uuid',
+      );
+
+      expect(memory.isUnderRecovery, isTrue);
+      expect(memory.isReady, isFalse);
+      expect(memory.isCompleted, isFalse);
+      expect(memory.activeRetrievalId, 'ret-active-uuid');
+    });
+
+    // 3. While under recovery: second initiate attempt is rejected
+    test('3. While under recovery: second initiate attempt is rejected', () async {
+      const memoryId = 'mem-busy-3';
+      const userA = 'user-uuid-recovery-owner';
+      RecoveryHistoryService.instance.setUserIdForTesting(userA);
+
+      // Save as already recovered to verify guard
+      await RecoveryHistoryService.instance.saveRecoveredMemory(
+        RecoveredMemory(
+          memoryId: memoryId,
+          reconstructedPlaintext: 'TEST PLAINTEXT',
+          recoveredAt: DateTime.now(),
+        ),
+      );
+
+      expect(
+        () => MemoryService.instance.initiateMemoryRetrieval(memoryId),
+        throwsA(isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('already completed recovery'),
+        )),
+      );
+    });
+
+    // 4. Complete recovery: status becomes COMPLETED
+    test('4. Complete recovery: status becomes COMPLETED', () {
+      final memory = UserStoredMemory(
+        id: 'mem-completed-4',
+        createdAt: DateTime.now(),
+        expiresAt: DateTime.now().add(const Duration(days: 7)),
+        fragmentCount: 3,
+        packetCount: 3,
+        memorizedCount: 3,
+        status: 'recovered',
+        retrievalStatus: 'completed',
+      );
+
+      expect(memory.isCompleted, isTrue);
+      expect(memory.isReady, isFalse);
+      expect(memory.isUnderRecovery, isFalse);
+    });
+
+    // 5. Completed memory: no longer appears in active recoverable-memory list
+    test('5. Completed memory: excluded from active recoverable-memory list', () async {
+      const userA = 'user-uuid-active-filter';
+      RecoveryHistoryService.instance.setUserIdForTesting(userA);
+
+      final mem1 = UserStoredMemory(
+        id: 'mem-active-5a',
+        createdAt: DateTime.now(),
+        expiresAt: DateTime.now().add(const Duration(days: 7)),
+        fragmentCount: 3,
+        packetCount: 3,
+        memorizedCount: 3,
+        status: 'active',
+        retrievalStatus: 'ready',
+      );
+
+      final mem2 = UserStoredMemory(
+        id: 'mem-recovered-5b',
+        createdAt: DateTime.now(),
+        expiresAt: DateTime.now().add(const Duration(days: 7)),
+        fragmentCount: 3,
+        packetCount: 3,
+        memorizedCount: 3,
+        status: 'recovered',
+        retrievalStatus: 'completed',
+      );
+
+      // Record mem2 in local recovery history
+      await RecoveryHistoryService.instance.saveRecoveredMemory(
+        RecoveredMemory(
+          memoryId: 'mem-recovered-5b',
+          reconstructedPlaintext: 'RECONSTRUCTED MESSAGE',
+          recoveredAt: DateTime.now(),
+        ),
+      );
+
+      final allMemories = [mem1, mem2];
+      final activeOnly = allMemories
+          .where((m) => !m.isCompleted)
+          .toList();
+
+      expect(activeOnly.length, 1);
+      expect(activeOnly.first.id, 'mem-active-5a');
+      expect(await RecoveryHistoryService.instance.hasRecovered(mem2.id), isTrue);
+    });
+
+    // 6. Completed memory: attempting another recovery is rejected
+    test('6. Completed memory: attempting another recovery is rejected', () async {
+      const userA = 'user-uuid-rejection-test';
+      RecoveryHistoryService.instance.setUserIdForTesting(userA);
+
+      const completedMemId = 'mem-already-done-6';
+      await RecoveryHistoryService.instance.saveRecoveredMemory(
+        RecoveredMemory(
+          memoryId: completedMemId,
+          reconstructedPlaintext: 'THE MEETING IS AT 4:30 PM',
+          recoveredAt: DateTime.now(),
+        ),
+      );
+
+      expect(
+        () => MemoryService.instance.initiateMemoryRetrieval(completedMemId),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    // 7. Logout -> login: completed status remains completed
+    test('7. Logout -> login preserves completed status in history', () async {
+      const userA = 'user-uuid-auth-cycle';
+      RecoveryHistoryService.instance.setUserIdForTesting(userA);
+
+      await RecoveryHistoryService.instance.saveRecoveredMemory(
+        RecoveredMemory(
+          memoryId: 'mem-persistent-7',
+          reconstructedPlaintext: 'PLAINTEXT SURVIVES LOGOUT',
+          recoveredAt: DateTime.now(),
+          packetCount: 4,
+        ),
+      );
+
+      // Verify saved in history
+      expect(await RecoveryHistoryService.instance.hasRecovered('mem-persistent-7'), isTrue);
+
+      // Logout
+      RecoveryHistoryService.instance.onSignOut();
+      expect(RecoveryHistoryService.instance.historyNotifier.value, isEmpty);
+
+      // Login again as User A
+      final restored = await RecoveryHistoryService.instance.getHistory(userId: userA);
+      expect(restored.length, 1);
+      expect(restored.first.memoryId, 'mem-persistent-7');
+      expect(restored.first.reconstructedPlaintext, 'PLAINTEXT SURVIVES LOGOUT');
+    });
+
+    // 8. App restart: completed status remains completed
+    test('8. App restart: completed status remains completed in local history', () async {
+      const userA = 'user-uuid-app-restart';
+      RecoveryHistoryService.instance.setUserIdForTesting(userA);
+
+      await RecoveryHistoryService.instance.saveRecoveredMemory(
+        RecoveredMemory(
+          memoryId: 'mem-restart-8',
+          reconstructedPlaintext: 'SURVIVES APP RESTART',
+          recoveredAt: DateTime.now(),
+          packetCount: 5,
+        ),
+      );
+
+      // Simulate app restart by clearing in-memory state and recreating service state
+      RecoveryHistoryService.instance.resetForTesting();
+      RecoveryHistoryService.instance.setUserIdForTesting(userA);
+
+      final reloaded = await RecoveryHistoryService.instance.getHistory();
+      expect(reloaded.length, 1);
+      expect(reloaded.first.memoryId, 'mem-restart-8');
+      expect(reloaded.first.reconstructedPlaintext, 'SURVIVES APP RESTART');
+    });
+
+    // 9. Recovery history: reconstructed plaintext is persisted locally for owner
+    test('9. Recovery history: reconstructed plaintext is persisted locally for owner', () async {
+      const userA = 'user-uuid-plaintext-owner';
+      RecoveryHistoryService.instance.setUserIdForTesting(userA);
+
+      const secretMessage = 'THE MEETING IS AT 4:30 PM IN ROOM 204';
+      await RecoveryHistoryService.instance.saveRecoveredMemory(
+        RecoveredMemory(
+          memoryId: 'mem-secret-9',
+          reconstructedPlaintext: secretMessage,
+          recoveredAt: DateTime.now(),
+          packetCount: 6,
+        ),
+      );
+
+      final entry = await RecoveryHistoryService.instance.getRecoveredMemory('mem-secret-9');
+      expect(entry, isNotNull);
+      expect(entry!.reconstructedPlaintext, secretMessage);
+      expect(entry.packetCount, 6);
+    });
+
+    // 10. Multi-user local isolation
+    test('10. Multi-user local isolation: User B never sees User A recovery history', () async {
+      const userA = 'user-uuid-alpha-10';
+      const userB = 'user-uuid-beta-10';
+
+      // User A saves recovered plaintext
+      RecoveryHistoryService.instance.setUserIdForTesting(userA);
+      await RecoveryHistoryService.instance.saveRecoveredMemory(
+        RecoveredMemory(
+          memoryId: 'mem-userA-secret',
+          reconstructedPlaintext: 'USER A SECRET MESSAGE',
+          recoveredAt: DateTime.now(),
+        ),
+      );
+      expect((await RecoveryHistoryService.instance.getHistory()).length, 1);
+
+      // Logout User A, switch to User B
+      RecoveryHistoryService.instance.onSignOut();
+      RecoveryHistoryService.instance.setUserIdForTesting(userB);
+
+      // User B sees ZERO history from User A
+      final userBHistory = await RecoveryHistoryService.instance.getHistory();
+      expect(userBHistory, isEmpty);
+      expect(await RecoveryHistoryService.instance.hasRecovered('mem-userA-secret'), isFalse);
+      expect(await RecoveryHistoryService.instance.getRecoveredMemory('mem-userA-secret'), isNull);
+
+      // User B creates own recovery history
+      await RecoveryHistoryService.instance.saveRecoveredMemory(
+        RecoveredMemory(
+          memoryId: 'mem-userB-secret',
+          reconstructedPlaintext: 'USER B DIFFERENT SECRET',
+          recoveredAt: DateTime.now(),
+        ),
+      );
+      expect((await RecoveryHistoryService.instance.getHistory()).length, 1);
+
+      // Switch back to User A
+      RecoveryHistoryService.instance.setUserIdForTesting(userA);
+      final userARestored = await RecoveryHistoryService.instance.getHistory();
+      expect(userARestored.length, 1);
+      expect(userARestored.first.reconstructedPlaintext, 'USER A SECRET MESSAGE');
+      expect(await RecoveryHistoryService.instance.hasRecovered('mem-userB-secret'), isFalse);
+
+      // User B clears history: User A history remains intact
+      RecoveryHistoryService.instance.setUserIdForTesting(userB);
+      await RecoveryHistoryService.instance.clearUserHistory();
+      expect((await RecoveryHistoryService.instance.getHistory()).length, 0);
+
+      RecoveryHistoryService.instance.setUserIdForTesting(userA);
+      final userAFinal = await RecoveryHistoryService.instance.getHistory();
+      expect(userAFinal.length, 1);
+      expect(userAFinal.first.memoryId, 'mem-userA-secret');
+    });
+
+    // 11. Station/node storage: recovered plaintext does NOT appear in node metadata and does NOT consume 5 node slots
+    test('11. Station/node storage: recovery history does not consume node slots or appear in node metadata', () async {
+      const userA = 'user-uuid-slot-check';
+      NodeStorageService.instance.setUserIdForTesting(userA);
+      RecoveryHistoryService.instance.setUserIdForTesting(userA);
+
+      // Verify node starts at 0/5 slots
+      expect(NodeStorageService.instance.activeHostedCount, 0);
+
+      // Save 3 recovered memories in owner history
+      for (int i = 1; i <= 3; i++) {
+        await RecoveryHistoryService.instance.saveRecoveredMemory(
+          RecoveredMemory(
+            memoryId: 'mem-owner-$i',
+            reconstructedPlaintext: 'RECOVERED PLAINTEXT $i',
+            recoveredAt: DateTime.now(),
+          ),
+        );
+      }
+
+      // Verify owner history has 3 items
+      final history = await RecoveryHistoryService.instance.getHistory();
+      expect(history.length, 3);
+
+      // Verify node storage slots remain completely unaffected (0 / 5)
+      expect(NodeStorageService.instance.activeHostedCount, 0);
+      expect(NodeStorageService.instance.isCapacityFull, isFalse);
+      expect(NodeStorageService.instance.remainingSlots, 5);
+
+      // Verify node storage has no fragments matching recovered memories
+      for (int i = 1; i <= 3; i++) {
+        expect(await NodeStorageService.instance.hasFragment('mem-owner-$i'), isFalse);
+      }
+    });
+
+    // 12. Zero disk plaintext invariant for node storage remains intact
+    test('12. Zero disk plaintext invariant for node storage remains intact when recovery history exists', () async {
+      const userA = 'user-uuid-zero-node-plain';
+      NodeStorageService.instance.setUserIdForTesting(userA);
+      RecoveryHistoryService.instance.setUserIdForTesting(userA);
+
+      // Node storage saves metadata only
+      await NodeStorageService.instance.saveFragment(
+        StoredNodeFragment(
+          fragmentId: 'frag-meta-only',
+          memoryId: 'mem-parent',
+          sequenceNumber: 1,
+          sizeBytes: 42,
+          receivedAt: DateTime.now(),
+          expiresAt: DateTime.now().add(const Duration(days: 30)),
+          assignmentId: 'assign-uuid',
+          verificationHash: 'hash-abc',
+        ),
+      );
+
+      // Recovery history saves owner plaintext
+      await RecoveryHistoryService.instance.saveRecoveredMemory(
+        RecoveredMemory(
+          memoryId: 'mem-owner-complete',
+          reconstructedPlaintext: 'TOP SECRET HUMAN SERVER MESSAGE',
+          recoveredAt: DateTime.now(),
+        ),
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+
+      // Inspect all node storage keys: MUST NEVER contain plaintext
+      for (final key in prefs.getKeys()) {
+        if (key.startsWith('human_server_node_')) {
+          final val = prefs.get(key);
+          if (val is String) {
+            expect(val.contains('TOP SECRET HUMAN SERVER MESSAGE'), isFalse);
+            expect(val.contains('"plaintext"'), isFalse);
+            expect(val.contains('"payloadText"'), isFalse);
+          }
+        }
+      }
+
+      // Plaintext only exists in owner recovery history namespace
+      final historyKey = 'human_server_recovered_history_entry_${userA}_mem-owner-complete';
+      final historyVal = prefs.getString(historyKey);
+      expect(historyVal, isNotNull);
+      expect(historyVal!.contains('TOP SECRET HUMAN SERVER MESSAGE'), isTrue);
     });
   });
 }

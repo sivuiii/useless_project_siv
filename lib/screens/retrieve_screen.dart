@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../models/recovered_memory.dart';
 import '../models/retrieval_status.dart';
 import '../models/user_stored_memory.dart';
 import '../services/memory_service.dart';
+import '../services/recovery_history_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/max_width_container.dart';
 import '../widgets/reconstruction_visualizer.dart';
@@ -35,6 +38,7 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
   void initState() {
     super.initState();
     _loadStoredMemories();
+    _loadRecoveryHistory();
   }
 
   @override
@@ -67,6 +71,14 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
     }
   }
 
+  Future<void> _loadRecoveryHistory() async {
+    try {
+      await RecoveryHistoryService.instance.getHistory();
+    } catch (e) {
+      debugPrint('Error loading recovery history: $e');
+    }
+  }
+
   void _selectMemory(UserStoredMemory mem) {
     setState(() {
       _selectedMemory = mem;
@@ -75,13 +87,27 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
     });
   }
 
-  Future<void> _handleInitiateRetrieval() async {
-    final query = _promptController.text.trim();
+  Future<void> _handleInitiateRetrieval([String? targetId]) async {
+    final query = (targetId ?? _promptController.text).trim();
     if (query.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             'PLEASE SELECT OR ENTER A STORED MEMORY ID.',
+            style: GoogleFonts.spaceMono(fontSize: 12),
+          ),
+          backgroundColor: AppTheme.signalWarning,
+        ),
+      );
+      return;
+    }
+
+    // Guard: Prevent starting a new recovery if one is already active
+    if (_isRetrieving && _selectedMemory?.memoryId != query) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'A RECOVERY IS ALREADY UNDERWAY. PLEASE WAIT OR PURGE CURRENT BUFFER.',
             style: GoogleFonts.spaceMono(fontSize: 12),
           ),
           backgroundColor: AppTheme.signalWarning,
@@ -97,6 +123,7 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
       _errorMessage = null;
       _reconstructedMessage = null;
       _retrievalStatus = null;
+      _promptController.text = query;
     });
 
     try {
@@ -151,12 +178,12 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
         });
       }
 
-      // If all hosting nodes have submitted recall responses
+      // If all hosting nodes have submitted recall responses and not yet completed
       if (status.hostingNodesCount > 0 &&
           status.recalledCount >= status.hostingNodesCount &&
           status.status != 'completed') {
         _pollTimer?.cancel();
-        // Auto-complete retrieval to purge ephemeral transport from database
+        // Auto-complete retrieval to save to local history and purge ephemeral transport
         _handleCompleteRetrieval(retrievalId);
       }
     } catch (e) {
@@ -170,13 +197,28 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
       _isPurging = true;
     });
 
+    final memId = _selectedMemory?.memoryId ?? _retrievalStatus?.memoryId;
+    final totalPackets = _retrievalStatus?.totalFragments ??
+        _selectedMemory?.packetCount ??
+        0;
+
     try {
-      await MemoryService.instance.completeMemoryRetrieval(retrievalId);
+      await MemoryService.instance.completeMemoryRetrieval(
+        retrievalId,
+        memoryId: memId,
+        reconstructedPlaintext: _reconstructedMessage,
+        packetCount: totalPackets,
+      );
+
+      // Refresh stored memories (the recovered memory will disappear from active list)
+      await _loadStoredMemories();
+      await _loadRecoveryHistory();
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'RETRIEVAL COMPLETE. EPHEMERAL TRANSPORT BUFFER PURGED FROM DB.',
+              'RECOVERY COMPLETED. SAVED TO LOCAL HISTORY & SERVER BUFFER PURGED.',
               style: GoogleFonts.spaceMono(fontSize: 11),
             ),
             backgroundColor: AppTheme.signalOnline,
@@ -195,6 +237,141 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
     }
   }
 
+  void _showViewRecoveredMemoryDialog(RecoveredMemory item) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: AppTheme.surfaceElevated,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(4),
+            side: const BorderSide(color: AppTheme.border),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.verified_rounded,
+                  color: AppTheme.signalOnline, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'MEMORY MEM-${item.shortId}',
+                  style: GoogleFonts.playfairDisplay(
+                    color: AppTheme.textPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  Text(
+                    'RECOVERED AT: ',
+                    style: GoogleFonts.spaceMono(
+                      color: AppTheme.textMuted,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Text(
+                    item.recoveredAt.toLocal().toString().split('.').first,
+                    style: GoogleFonts.spaceMono(
+                      color: AppTheme.brassAccent,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+              if (item.packetCount > 0) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'PACKETS RECONSTRUCTED: ${item.packetCount}',
+                  style: GoogleFonts.spaceMono(
+                    color: AppTheme.textMuted,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+              Text(
+                'RECONSTRUCTED PLAINTEXT:',
+                style: GoogleFonts.spaceMono(
+                  color: AppTheme.textMuted,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppTheme.surface,
+                  borderRadius: BorderRadius.circular(3),
+                  border: Border.all(color: AppTheme.borderSubtle),
+                ),
+                child: SelectableText(
+                  item.reconstructedPlaintext,
+                  style: GoogleFonts.courierPrime(
+                    color: AppTheme.textPrimary,
+                    fontSize: 14,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () {
+                Clipboard.setData(
+                  ClipboardData(text: item.reconstructedPlaintext),
+                );
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'PLAINTEXT COPIED TO CLIPBOARD',
+                      style: GoogleFonts.spaceMono(fontSize: 11),
+                    ),
+                    duration: const Duration(seconds: 2),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.copy_rounded, size: 14),
+              label: Text(
+                'COPY',
+                style: GoogleFonts.spaceMono(fontSize: 11),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.brassAccent,
+                foregroundColor: Colors.black,
+              ),
+              child: Text(
+                'CLOSE',
+                style: GoogleFonts.spaceMono(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -210,7 +387,6 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
         child: MaxWidthContainer(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -266,66 +442,213 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
                 ),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
 
-              // Active Memories Selection Chips
+              // AREA 1: ACTIVE / RECOVERABLE MEMORIES
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'ACTIVE / RECOVERABLE MEMORIES',
+                      style: GoogleFonts.inter(
+                        color: AppTheme.textMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (_storedMemories.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surfaceElevated,
+                        borderRadius: BorderRadius.circular(2),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Text(
+                        '${_storedMemories.length} ACTIVE',
+                        style: GoogleFonts.spaceMono(
+                          color: AppTheme.brassAccent,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 10),
+
               if (_isLoadingMemories)
                 const LinearProgressIndicator(
                   minHeight: 2,
                   color: AppTheme.brassAccent,
                   backgroundColor: AppTheme.surfaceElevated,
                 )
-              else if (_storedMemories.isNotEmpty) ...[
-                Text(
-                  'YOUR STORED MEMORIES IN THE NETWORK',
-                  style: GoogleFonts.inter(
-                    color: AppTheme.textMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
+              else if (_storedMemories.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.surface,
+                    borderRadius: BorderRadius.circular(3),
+                    border: Border.all(color: AppTheme.border),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
+                  child: Text(
+                    'No active memories awaiting recovery in the network.',
+                    style: GoogleFonts.inter(
+                      color: AppTheme.textSecondary,
+                      fontSize: 12,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                )
+              else
+                Column(
                   children: _storedMemories.map((mem) {
-                    final isSelected = _selectedMemory?.memoryId == mem.memoryId ||
-                        _promptController.text.trim() == mem.memoryId;
-                    return ActionChip(
-                      onPressed: () => _selectMemory(mem),
-                      backgroundColor: isSelected
-                          ? AppTheme.brassAccent.withValues(alpha: 0.2)
-                          : AppTheme.surfaceElevated,
-                      side: BorderSide(
-                        color: isSelected
-                            ? AppTheme.brassAccent
-                            : AppTheme.border,
-                      ),
-                      avatar: Icon(
-                        Icons.fingerprint_rounded,
-                        size: 14,
-                        color: isSelected
-                            ? AppTheme.brassAccent
-                            : AppTheme.textMuted,
-                      ),
-                      label: Text(
-                        'MEM-${mem.shortId} • ${mem.packetCount} PACKETS • ${mem.memorizedCount} / ${mem.packetCount} MEMORIZED',
-                        style: GoogleFonts.spaceMono(
-                          color: isSelected
+                    final isThisActiveRetrieval = _isRetrieving &&
+                        (_selectedMemory?.memoryId == mem.memoryId ||
+                            _promptController.text.trim() == mem.memoryId);
+                    final isUnderRecovery =
+                        mem.isUnderRecovery || isThisActiveRetrieval;
+                    final isAnotherRecoveryActive =
+                        _isRetrieving && !isThisActiveRetrieval;
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: isThisActiveRetrieval
+                            ? AppTheme.brassAccent.withValues(alpha: 0.08)
+                            : AppTheme.surface,
+                        borderRadius: BorderRadius.circular(3),
+                        border: Border.all(
+                          color: isThisActiveRetrieval
                               ? AppTheme.brassAccent
-                              : AppTheme.textPrimary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
+                              : AppTheme.border,
                         ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'MEMORY MEM-${mem.shortId}',
+                                  style: GoogleFonts.spaceMono(
+                                    color: AppTheme.textPrimary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isUnderRecovery
+                                      ? AppTheme.signalWarning
+                                          .withValues(alpha: 0.15)
+                                      : AppTheme.signalOnline
+                                          .withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(2),
+                                  border: Border.all(
+                                    color: isUnderRecovery
+                                        ? AppTheme.signalWarning
+                                        : AppTheme.signalOnline,
+                                  ),
+                                ),
+                                child: Text(
+                                  isUnderRecovery
+                                      ? 'UNDER RECOVERY'
+                                      : 'READY',
+                                  style: GoogleFonts.spaceMono(
+                                    color: isUnderRecovery
+                                        ? AppTheme.signalWarning
+                                        : AppTheme.signalOnline,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '${mem.packetCount} PACKETS • ${mem.memorizedCount} / ${mem.packetCount} MEMORIZED',
+                            style: GoogleFonts.spaceMono(
+                              color: AppTheme.textSecondary,
+                              fontSize: 11,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 38,
+                            child: ElevatedButton.icon(
+                              onPressed: isAnotherRecoveryActive
+                                  ? null
+                                  : () {
+                                      _selectMemory(mem);
+                                      if (!isUnderRecovery) {
+                                        _handleInitiateRetrieval(mem.memoryId);
+                                      }
+                                    },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isUnderRecovery
+                                    ? AppTheme.surfaceElevated
+                                    : AppTheme.surfaceElevated,
+                                foregroundColor: isUnderRecovery
+                                    ? AppTheme.signalWarning
+                                    : AppTheme.brassAccent,
+                                side: BorderSide(
+                                  color: isUnderRecovery
+                                      ? AppTheme.signalWarning
+                                      : AppTheme.borderSubtle,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                              ),
+                              icon: isUnderRecovery
+                                  ? const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppTheme.signalWarning,
+                                      ),
+                                    )
+                                  : const Icon(Icons.downloading_rounded,
+                                      size: 16),
+                              label: Text(
+                                isUnderRecovery
+                                    ? 'UNDER RECOVERY'
+                                    : 'REQUEST RECOVERY',
+                                style: GoogleFonts.spaceMono(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   }).toList(),
                 ),
-                const SizedBox(height: 16),
-              ],
 
-              // Query Input Box
+              const SizedBox(height: 20),
+
+              // Query Input Box (Manual search or target override)
               Text(
                 'TARGET MEMORY ID',
                 style: GoogleFonts.inter(
@@ -362,14 +685,16 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
                 onSubmitted: (_) => _handleInitiateRetrieval(),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 14),
 
               // Retrieve CTA Button (Frozen Spec: REQUEST RECOVERY)
               SizedBox(
                 width: double.infinity,
                 height: 48,
                 child: ElevatedButton.icon(
-                  onPressed: _isRetrieving ? null : _handleInitiateRetrieval,
+                  onPressed: _isRetrieving
+                      ? null
+                      : () => _handleInitiateRetrieval(),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.surfaceElevated,
                     foregroundColor: AppTheme.brassAccent,
@@ -450,7 +775,7 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
 
               const SizedBox(height: 24),
 
-              // Live Status & Collected Fragments
+              // Live Status & Collected Fragments Panel
               if (_retrievalStatus != null) ...[
                 Container(
                   width: double.infinity,
@@ -466,12 +791,15 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'RETRIEVAL STATUS: ${_retrievalStatus!.status.toUpperCase()}',
-                            style: GoogleFonts.spaceMono(
-                              color: AppTheme.brassAccent,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
+                          Flexible(
+                            child: Text(
+                              'STATUS: ${_retrievalStatus!.status.toUpperCase()}',
+                              style: GoogleFonts.spaceMono(
+                                color: AppTheme.brassAccent,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           IconButton(
@@ -531,7 +859,7 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'RECALLED FRAGMENTS',
+                                    'RECALLED',
                                     style: GoogleFonts.spaceMono(
                                         color: AppTheme.textMuted, fontSize: 10),
                                   ),
@@ -664,7 +992,7 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
                       icon: const Icon(Icons.cleaning_services_rounded,
                           color: AppTheme.signalOnline, size: 16),
                       label: Text(
-                        'PURGE EPHEMERAL TRANSPORT BUFFER FROM DB',
+                        'PURGE BUFFER & SAVE TO HISTORY',
                         style: GoogleFonts.spaceMono(
                           color: AppTheme.signalOnline,
                           fontSize: 11,
@@ -673,33 +1001,183 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
                       ),
                     ),
                   ),
-              ] else if (!_isRetrieving && _retrievalStatus == null) ...[
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: AppTheme.surface,
-                    borderRadius: BorderRadius.circular(2),
-                    border: Border.all(color: AppTheme.border),
-                  ),
-                  child: Column(
-                    children: [
-                      const Icon(Icons.saved_search_rounded,
-                          color: AppTheme.textMuted, size: 32),
-                      const SizedBox(height: 10),
-                      Text(
-                        'SELECT A STORED MEMORY TO INITIATE RETRIEVAL',
-                        style: GoogleFonts.spaceMono(
-                          color: AppTheme.textSecondary,
-                          fontSize: 11,
-                          letterSpacing: 0.5,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
+                const SizedBox(height: 24),
               ],
+
+              // AREA 2: RECOVERY HISTORY
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'RECOVERY HISTORY',
+                      style: GoogleFonts.inter(
+                        color: AppTheme.textMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  ValueListenableBuilder<List<RecoveredMemory>>(
+                    valueListenable:
+                        RecoveryHistoryService.instance.historyNotifier,
+                    builder: (context, history, _) {
+                      if (history.isEmpty) return const SizedBox.shrink();
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceElevated,
+                          borderRadius: BorderRadius.circular(2),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: Text(
+                          '${history.length} RECOVERED',
+                          style: GoogleFonts.spaceMono(
+                            color: AppTheme.signalOnline,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+
+              ValueListenableBuilder<List<RecoveredMemory>>(
+                valueListenable:
+                    RecoveryHistoryService.instance.historyNotifier,
+                builder: (context, history, _) {
+                  if (history.isEmpty) {
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppTheme.surface,
+                        borderRadius: BorderRadius.circular(3),
+                        border: Border.all(color: AppTheme.border),
+                      ),
+                      child: Text(
+                        'No recovered memories in local history.',
+                        style: GoogleFonts.inter(
+                          color: AppTheme.textSecondary,
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    );
+                  }
+
+                  return Column(
+                    children: history.map((item) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surface,
+                          borderRadius: BorderRadius.circular(3),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'MEMORY MEM-${item.shortId}',
+                                    style: GoogleFonts.spaceMono(
+                                      color: AppTheme.textPrimary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.signalOnline
+                                        .withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(2),
+                                    border: Border.all(
+                                      color: AppTheme.signalOnline,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'RECOVERED',
+                                    style: GoogleFonts.spaceMono(
+                                      color: AppTheme.signalOnline,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 4,
+                              children: [
+                                Text(
+                                  'RECOVERED: ${item.recoveredAt.toLocal().toString().split('.').first}',
+                                  style: GoogleFonts.spaceMono(
+                                    color: AppTheme.textSecondary,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                                if (item.packetCount > 0)
+                                  Text(
+                                    '• ${item.packetCount} PACKETS',
+                                    style: GoogleFonts.spaceMono(
+                                      color: AppTheme.textSecondary,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 38,
+                              child: ElevatedButton.icon(
+                                onPressed: () =>
+                                    _showViewRecoveredMemoryDialog(item),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.surfaceElevated,
+                                  foregroundColor: AppTheme.brassAccent,
+                                  side: const BorderSide(
+                                    color: AppTheme.brassAccent,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                ),
+                                icon: const Icon(Icons.visibility_rounded,
+                                    size: 16),
+                                label: Text(
+                                  'VIEW RECOVERED MEMORY',
+                                  style: GoogleFonts.spaceMono(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
             ],
           ),
         ),

@@ -814,11 +814,6 @@ class MemoryService {
 
   /// Creates or gets an open retrieval request for a stored memory
   Future<String> initiateMemoryRetrieval(String memoryId) async {
-    final client = _supabase;
-    if (client == null || _currentUser == null) {
-      throw const AuthException('You must be signed in to initiate retrieval.');
-    }
-
     final trimmed = memoryId.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError('Memory ID cannot be empty.');
@@ -829,6 +824,11 @@ class MemoryService {
       throw StateError(
         'This memory has already completed recovery and cannot be recovered again.',
       );
+    }
+
+    final client = _supabase;
+    if (client == null || _currentUser == null) {
+      throw const AuthException('You must be signed in to initiate retrieval.');
     }
 
     final response = await client.rpc(
