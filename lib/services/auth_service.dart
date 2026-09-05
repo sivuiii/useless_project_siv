@@ -127,10 +127,10 @@ class AuthService {
         'reliability': 1.0,
       };
 
-      // 3. Insert new profile into Supabase
+      // 3. Upsert new profile into Supabase (compatible with trigger & manual creation)
       final insertedData = await client
           .from('profiles')
-          .insert(initialProfile)
+          .upsert(initialProfile)
           .select()
           .single();
 
