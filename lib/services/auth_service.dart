@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/user_profile.dart';
 import 'node_service.dart';
+import 'node_storage_service.dart';
 
 class AuthService {
   AuthService._();
@@ -47,6 +48,7 @@ class AuthService {
     if (response.user != null) {
       await ensureProfileExists(response.user!);
       await NodeService.instance.registerNodeIfNeeded();
+      await NodeStorageService.instance.getStoredFragments(userId: response.user!.id);
     }
 
     return response;
@@ -70,6 +72,7 @@ class AuthService {
     if (response.user != null) {
       await ensureProfileExists(response.user!);
       await NodeService.instance.registerNodeIfNeeded();
+      await NodeStorageService.instance.getStoredFragments(userId: response.user!.id);
     }
 
     return response;
@@ -83,6 +86,7 @@ class AuthService {
     }
     currentProfileNotifier.value = null;
     NodeService.instance.clear();
+    await NodeStorageService.instance.onSignOut();
   }
 
   /// Ensures a profile row exists in the `profiles` table.

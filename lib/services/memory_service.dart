@@ -217,41 +217,145 @@ class MemoryService {
     return sha256.convert(bytes).toString();
   }
 
-  /// Reconstructs the original message from recalled responses using canonical position metadata.
-  /// Handles out-of-order arrival, duplicate responses, redundant overlapping fragments,
-  /// and missing fragments deterministically without storing original message plaintext.
+  /// Reconstructs the original message from recalled responses using overlapping observations
+  /// and canonical slot consensus.
+  /// 
+  /// In the Human Server model:
+  /// - Humans are the storage (no server-side canonical plaintext verification).
+  /// - Responses can arrive in any order, with duplicate submissions, redundant overlaps,
+  ///   or missing fragments.
+  /// - Consensus voting across overlapping observations detects and filters out isolated
+  ///   human typos or inconsistent outlier inputs.
+  /// - Deterministically produces the exact ordered message without duplicate words.
   static String reconstructFromResponses(List<RecalledFragmentItem> items) {
     if (items.isEmpty) return '';
 
-    final Map<int, String> phraseMap = {};
+    final Map<int, List<String>> slotObservations = {};
 
     for (final item in items) {
       final text = item.recalledText.trim();
       if (text.isEmpty) continue;
 
+      final parts = _parseRecalledParts(text);
       final indices = item.canonicalIndices;
-      if (indices.isNotEmpty && text.contains('+')) {
-        final parts = text
-            .split('+')
-            .map((p) => p.trim())
-            .where((p) => p.isNotEmpty)
-            .toList();
+
+      if (indices.isNotEmpty && parts.isNotEmpty) {
         for (int i = 0; i < parts.length && i < indices.length; i++) {
-          phraseMap[indices[i]] = parts[i];
+          final slot = indices[i];
+          slotObservations.putIfAbsent(slot, () => []).add(parts[i]);
         }
       } else if (indices.isNotEmpty) {
-        phraseMap[indices.first] = text;
+        slotObservations.putIfAbsent(indices.first, () => []).add(text);
       }
     }
 
-    if (phraseMap.isNotEmpty) {
-      final sortedIndices = phraseMap.keys.toList()..sort();
-      return sortedIndices.map((idx) => phraseMap[idx]!).join(' ').trim();
+    if (slotObservations.isNotEmpty) {
+      final sortedSlots = slotObservations.keys.toList()..sort();
+      final List<String> orderedPhrases = [];
+
+      for (final slot in sortedSlots) {
+        final observations = slotObservations[slot]!;
+        final consensusPhrase = _selectConsensusPhrase(observations);
+        if (consensusPhrase.isNotEmpty) {
+          orderedPhrases.add(consensusPhrase);
+        }
+      }
+
+      return orderedPhrases.join(' ').trim();
     }
 
     // Fallback if no canonical indices were present
     return reconstructFromFragments(items.map((i) => i.recalledText).toList());
   }
+
+  /// Parses a recalled fragment string into its constituent phrase parts.
+  static List<String> _parseRecalledParts(String text) {
+    return text
+        .split(RegExp(r'\s*[\+;,]\s*'))
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+  }
+
+  /// Resolves overlapping human observations for a single canonical slot.
+  /// Detects and eliminates outliers, typos, and partial phrases via consensus voting.
+  static String _selectConsensusPhrase(List<String> observations) {
+    if (observations.isEmpty) return '';
+    if (observations.length == 1) return observations.first;
+
+    // 1. Group observations by uppercase normalized string
+    final Map<String, int> counts = {};
+    final Map<String, String> originalVariants = {};
+
+    for (final raw in observations) {
+      final norm = raw.trim().replaceAll(RegExp(r'\s+'), ' ').toUpperCase();
+      counts[norm] = (counts[norm] ?? 0) + 1;
+      originalVariants.putIfAbsent(norm, () => raw.trim());
+    }
+
+    if (counts.length == 1) {
+      return originalVariants[counts.keys.first]!;
+    }
+
+    // 2. Score candidates using vote count + cross-support (substring & near-typo)
+    String bestCandidate = counts.keys.first;
+    double highestScore = -1.0;
+
+    for (final candidate in counts.keys) {
+      final voteCount = counts[candidate]!;
+      double score = voteCount.toDouble();
+
+      for (final other in counts.keys) {
+        if (candidate == other) continue;
+        final otherCount = counts[other]!;
+
+        // Substring support: e.g. "MEETING" partially supports "THE MEETING"
+        if (candidate.contains(other)) {
+          score += otherCount * 0.7;
+        } else if (_isNearTypo(candidate, other)) {
+          // If other is a typo (e.g. "THE METING" vs "THE MEETING"),
+          // the more frequent candidate absorbs support
+          if (voteCount > otherCount) {
+            score += otherCount * 0.5;
+          }
+        }
+      }
+
+      if (score > highestScore) {
+        highestScore = score;
+        bestCandidate = candidate;
+      }
+    }
+
+    return originalVariants[bestCandidate] ?? bestCandidate;
+  }
+
+  /// Checks if two strings are within a small edit distance (likely typo)
+  static bool _isNearTypo(String s1, String s2) {
+    if ((s1.length - s2.length).abs() > 2) return false;
+    int diff = 0;
+    int i = 0, j = 0;
+    while (i < s1.length && j < s2.length) {
+      if (s1[i] != s2[j]) {
+        diff++;
+        if (diff > 2) return false;
+        if (s1.length > s2.length) {
+          i++;
+        } else if (s2.length > s1.length) {
+          j++;
+        } else {
+          i++;
+          j++;
+        }
+      } else {
+        i++;
+        j++;
+      }
+    }
+    diff += (s1.length - i) + (s2.length - j);
+    return diff <= 2;
+  }
+
 
   /// Reconstructs the original message from recalled fragments using the overlapping phrase model.
   static String reconstructFromFragments(

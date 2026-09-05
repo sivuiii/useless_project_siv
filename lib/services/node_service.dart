@@ -47,6 +47,7 @@ class NodeService {
       pendingRecallsNotifier.value = [];
     }
     isSyncingNotifier.value = false;
+    NodeStorageService.instance.onSignOut();
   }
 
   /// Fetches the current user's node from Supabase, or returns the cached node.

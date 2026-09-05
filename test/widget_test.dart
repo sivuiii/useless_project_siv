@@ -1093,6 +1093,87 @@ void main() {
       expect(reconstructed, 'THE MEETING 4:30 ROOM 204');
     });
 
+    // 11b. one incorrect human response (Requirement 16)
+    test('Requirement 11b: one incorrect human response is detected and filtered out via overlapping consensus', () {
+      final responses = [
+        RecalledFragmentItem(
+          fragmentId: 'fA',
+          sequenceNumber: 1,
+          recalledText: 'THE METING + 4:30', // Typo: METING instead of MEETING
+          createdAt: DateTime.now(),
+          canonicalIndices: const [0, 1],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'fB',
+          sequenceNumber: 2,
+          recalledText: '4:30 + ROOM 204',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [1, 2],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'fC',
+          sequenceNumber: 3,
+          recalledText: 'ROOM 204 + THE MEETING',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [2, 0],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'fD',
+          sequenceNumber: 4,
+          recalledText: 'THE MEETING + ROOM 204',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [0, 2],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'fE',
+          sequenceNumber: 5,
+          recalledText: '4:30 + THE MEETING',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [1, 0],
+        ),
+      ];
+
+      final reconstructed = MemoryService.reconstructFromResponses(responses);
+      expect(reconstructed, 'THE MEETING 4:30 ROOM 204');
+    });
+
+    // 11c. partial phrase recall (e.g. MEETING vs THE MEETING)
+    test('Requirement 11c: partial word recall (MEETING instead of THE MEETING) absorbed by consensus', () {
+      final responses = [
+        RecalledFragmentItem(
+          fragmentId: 'fA',
+          sequenceNumber: 1,
+          recalledText: 'THE MEETING + 4:30',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [0, 1],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'fB',
+          sequenceNumber: 2,
+          recalledText: 'MEETING + ROOM 204', // Missing "THE"
+          createdAt: DateTime.now(),
+          canonicalIndices: const [0, 2],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'fC',
+          sequenceNumber: 3,
+          recalledText: 'ROOM 204 + THE MEETING',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [2, 0],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'fD',
+          sequenceNumber: 4,
+          recalledText: '4:30 + THE MEETING',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [1, 0],
+        ),
+      ];
+
+      final reconstructed = MemoryService.reconstructFromResponses(responses);
+      expect(reconstructed, 'THE MEETING 4:30 ROOM 204');
+    });
+
     // 12. missing fragments
     test('Requirement 12: missing fragments assemble available phrases in correct canonical order', () {
       final responses = [
@@ -1159,6 +1240,113 @@ void main() {
 
       expect(delivery.payloadText, isEmpty);
       expect(delivery.isCleared, isTrue);
+    });
+  });
+
+  group('Multi-User Local Storage Isolation Tests', () {
+    setUp(() {
+      SharedPreferences.setMockInitialValues({});
+      NodeStorageService.instance.resetForTesting();
+    });
+
+    test('Strict user-scoped isolation across account switches', () async {
+      const userA = 'user-uuid-aaaa-1111';
+      const userB = 'user-uuid-bbbb-2222';
+
+      // 1. User A stores metadata
+      NodeStorageService.instance.setUserIdForTesting(userA);
+      await NodeStorageService.instance.saveFragment(
+        StoredNodeFragment(
+          fragmentId: 'frag-userA-1',
+          memoryId: 'mem-userA',
+          sequenceNumber: 1,
+          sizeBytes: 24,
+          receivedAt: DateTime.now(),
+          expiresAt: DateTime.now().add(const Duration(days: 30)),
+          assignmentId: 'assign-userA-1',
+          verificationHash: 'hash-userA-1',
+        ),
+      );
+
+      expect(NodeStorageService.instance.activeHostedCount, 1);
+      expect(await NodeStorageService.instance.hasFragment('frag-userA-1'), isTrue);
+
+      // 2. Switch to User B
+      NodeStorageService.instance.setUserIdForTesting(userB);
+      final userBFragments = await NodeStorageService.instance.getStoredFragments();
+
+      // 3. User B sees zero fragments
+      expect(userBFragments, isEmpty);
+      expect(NodeStorageService.instance.activeHostedCount, 0);
+      expect(NodeStorageService.instance.isCapacityFull, isFalse);
+      expect(await NodeStorageService.instance.hasFragment('frag-userA-1'), isFalse);
+
+      // 4. User B stores metadata
+      await NodeStorageService.instance.saveFragment(
+        StoredNodeFragment(
+          fragmentId: 'frag-userB-1',
+          memoryId: 'mem-userB',
+          sequenceNumber: 1,
+          sizeBytes: 30,
+          receivedAt: DateTime.now(),
+          expiresAt: DateTime.now().add(const Duration(days: 30)),
+          assignmentId: 'assign-userB-1',
+          verificationHash: 'hash-userB-1',
+        ),
+      );
+
+      expect(NodeStorageService.instance.activeHostedCount, 1);
+      expect(await NodeStorageService.instance.hasFragment('frag-userB-1'), isTrue);
+      expect(await NodeStorageService.instance.hasFragment('frag-userA-1'), isFalse);
+
+      // 5. Switch back to User A
+      NodeStorageService.instance.setUserIdForTesting(userA);
+      final userAFragments = await NodeStorageService.instance.getStoredFragments();
+
+      // 6. User A sees only User A's metadata
+      expect(userAFragments.length, 1);
+      expect(userAFragments.first.fragmentId, 'frag-userA-1');
+      expect(NodeStorageService.instance.activeHostedCount, 1);
+      expect(await NodeStorageService.instance.hasFragment('frag-userA-1'), isTrue);
+      expect(await NodeStorageService.instance.hasFragment('frag-userB-1'), isFalse);
+
+      // 7. clearAllMetadata for User B does not delete User A's metadata
+      NodeStorageService.instance.setUserIdForTesting(userB);
+      await NodeStorageService.instance.clearAllMetadata();
+      expect(NodeStorageService.instance.activeHostedCount, 0);
+
+      // Verify User A still has their metadata
+      NodeStorageService.instance.setUserIdForTesting(userA);
+      final userAAfterB = await NodeStorageService.instance.getStoredFragments();
+      expect(userAAfterB.length, 1);
+      expect(userAAfterB.first.fragmentId, 'frag-userA-1');
+      expect(NodeStorageService.instance.activeHostedCount, 1);
+    });
+
+    test('Zero plaintext invariant is maintained in user-scoped storage', () async {
+      const userA = 'user-uuid-aaaa-1111';
+      NodeStorageService.instance.setUserIdForTesting(userA);
+
+      await NodeStorageService.instance.saveFragment(
+        StoredNodeFragment(
+          fragmentId: 'frag-userA-safe',
+          memoryId: 'mem-safe',
+          sequenceNumber: 1,
+          sizeBytes: 20,
+          receivedAt: DateTime.now(),
+          expiresAt: DateTime.now().add(const Duration(days: 30)),
+          assignmentId: 'assign-safe',
+          verificationHash: 'hash-safe',
+        ),
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      for (final key in prefs.getKeys()) {
+        final val = prefs.get(key);
+        if (val is String) {
+          expect(val.contains('"plaintext"'), isFalse);
+        }
+      }
     });
   });
 }
