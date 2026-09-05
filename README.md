@@ -163,13 +163,13 @@ flutter build apk --release
 
 ### Screenshots
 
-![Screenshot1](https://github.com/user-attachments/assets/8920b256-2ba8-4988-b824-5351134eb4bd)
+![Screenshot1](https://github.com/sivuiii/useless_project_siv/blob/main/Screenshot%202026-09-05%20092156.png)
 *Human Server station dashboard showing node capacity slots (0/5 used), station status, and network synchronization*
 
-![Screenshot2](https://github.com/user-attachments/assets/8920b256-2ba8-4988-b824-5351134eb4bd)
+![Screenshot2](https://github.com/sivuiii/useless_project_siv/blob/main/Screenshot%202026-09-05%20092320.png)
 *Store screen demonstrating client-side fragmentation into overlapping packets and immediate plaintext clearance*
 
-![Screenshot3](https://github.com/user-attachments/assets/8920b256-2ba8-4988-b824-5351134eb4bd)
+![Screenshot3](https://github.com/sivuiii/useless_project_siv/blob/main/Screenshot%202026-09-05%20092325.png)
 *Retrieve screen showing Active Recoverable Memories vs Recovery History and real-time consensus reconstruction*
 
 ### Workflow Diagram
@@ -209,24 +209,7 @@ flutter build apk --release
 
 For Hardware:
 
-# Schematic & Circuit
-
-![Circuit](https://github.com/user-attachments/assets/8920b256-2ba8-4988-b824-5351134eb4bd)
-*No dedicated electronic circuit is required; the application operates using standard mobile smartphones and desktop PCs connected via HTTPS.*
-
-![Schematic](https://github.com/user-attachments/assets/8920b256-2ba8-4988-b824-5351134eb4bd)
-*System architecture consists of user client nodes connected to the PostgreSQL/Supabase coordination backend over secure endpoints.*
-
-# Build Photos
-
-![Components](https://github.com/user-attachments/assets/8920b256-2ba8-4988-b824-5351134eb4bd)
-*Android smartphone, development computer, and network connection used to build, test, and run Human Server.*
-
-![Build](https://github.com/user-attachments/assets/8920b256-2ba8-4988-b824-5351134eb4bd)
-*Testing multi-node distribution and consensus reconstruction across 8 authenticated test accounts.*
-
-![Final](https://github.com/user-attachments/assets/8920b256-2ba8-4988-b824-5351134eb4bd)
-*Final Human Server release running on Android and Windows.*
+None Used
 
 ---
 
