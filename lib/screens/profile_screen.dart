@@ -107,6 +107,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             fontWeight: FontWeight.w800,
             letterSpacing: 1.2,
           ),
+          overflow: TextOverflow.ellipsis,
         ),
       ),
       body: SingleChildScrollView(
@@ -210,6 +211,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                           color: AppTheme.textMuted,
                                           fontSize: 10,
                                         ),
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ],
                                   ),
@@ -355,22 +357,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildAccountMetric(String label, String value, Color color) {
     return Column(
       children: [
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            color: AppTheme.textMuted,
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.5,
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            label,
+            style: GoogleFonts.inter(
+              color: AppTheme.textMuted,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          value,
-          style: GoogleFonts.playfairDisplay(
-            color: color,
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            value,
+            style: GoogleFonts.playfairDisplay(
+              color: color,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
       ],
@@ -385,39 +393,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
+      child: Material(
         color: AppTheme.surface,
-        borderRadius: BorderRadius.circular(3),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: ListTile(
-        onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-        leading: Container(
-          padding: const EdgeInsets.all(7),
-          decoration: BoxDecoration(
-            color: AppTheme.surfaceElevated,
-            borderRadius: BorderRadius.circular(3),
-            border: Border.all(color: AppTheme.border),
-          ),
-          child: Icon(icon, color: AppTheme.textPrimary, size: 18),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(3),
+          side: const BorderSide(color: AppTheme.border),
         ),
-        title: Text(
-          title,
-          style: GoogleFonts.inter(
-            color: AppTheme.textPrimary,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
+        child: ListTile(
+          onTap: onTap,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          leading: Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: AppTheme.surfaceElevated,
+              borderRadius: BorderRadius.circular(3),
+              border: Border.all(color: AppTheme.border),
+            ),
+            child: Icon(icon, color: AppTheme.textPrimary, size: 18),
           ),
-        ),
-        subtitle: Text(
-          subtitle,
-          style: GoogleFonts.inter(
-            color: AppTheme.textMuted,
-            fontSize: 11,
+          title: Text(
+            title,
+            style: GoogleFonts.inter(
+              color: AppTheme.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
           ),
+          subtitle: Text(
+            subtitle,
+            style: GoogleFonts.inter(
+              color: AppTheme.textMuted,
+              fontSize: 11,
+            ),
+          ),
+          trailing: const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted, size: 18),
         ),
-        trailing: const Icon(Icons.chevron_right_rounded, color: AppTheme.textMuted, size: 18),
       ),
     );
   }
