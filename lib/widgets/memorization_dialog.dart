@@ -184,7 +184,35 @@ class _MemorizationDialogState extends State<MemorizationDialog> {
                       height: 1.4,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
+
+                  // Sender Identification Banner (Requirement 4)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceElevated,
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(color: AppTheme.brassAccent.withValues(alpha: 0.5)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.person_outline_rounded, color: AppTheme.brassAccent, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'MEMORY FROM: ${frag.senderUsername.toUpperCase()}',
+                            style: GoogleFonts.spaceMono(
+                              color: AppTheme.brassLight,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
 
                   // Ephemeral Parchment Slip Box
                   Container(

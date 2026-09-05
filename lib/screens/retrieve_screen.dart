@@ -143,10 +143,8 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
       });
 
       if (status.fragments.isNotEmpty) {
-        final fragmentTexts =
-            status.fragments.map((f) => f.fragmentText).toList();
         final reconstructed =
-            MemoryService.reconstructFromFragments(fragmentTexts);
+            MemoryService.reconstructFromResponses(status.fragments);
 
         setState(() {
           _reconstructedMessage = reconstructed;
@@ -312,7 +310,7 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
                             : AppTheme.textMuted,
                       ),
                       label: Text(
-                        'MEM-${mem.shortId} (${mem.fragmentCount} frags)',
+                        'MEM-${mem.shortId} • ${mem.packetCount} PACKETS • ${mem.memorizedCount} / ${mem.packetCount} MEMORIZED',
                         style: GoogleFonts.spaceMono(
                           color: isSelected
                               ? AppTheme.brassAccent
@@ -366,7 +364,7 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
 
               const SizedBox(height: 16),
 
-              // Retrieve CTA Button
+              // Retrieve CTA Button (Frozen Spec: REQUEST RECOVERY)
               SizedBox(
                 width: double.infinity,
                 height: 48,
@@ -411,7 +409,7 @@ class _RetrieveScreenState extends State<RetrieveScreen> {
                           ],
                         )
                       : Text(
-                          'INITIATE RETRIEVAL SIGNAL',
+                          'REQUEST RECOVERY',
                           style: GoogleFonts.inter(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,

@@ -21,6 +21,7 @@ class NodeStorageService {
 
   /// Strict maximum active hosted/memorized fragments allowed per human node
   static const int maxNodeCapacity = 5;
+  int get maxCapacity => maxNodeCapacity;
 
   final ValueNotifier<List<StoredNodeFragment>> storedFragmentsNotifier =
       ValueNotifier<List<StoredNodeFragment>>([]);

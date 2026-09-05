@@ -15,6 +15,7 @@ class PendingDeliveryFragment {
   final String expectedHash;
   final DateTime expiresAt;
   final DateTime? assignedAt;
+  final String senderUsername;
 
   // Ephemeral plaintext - cleared upon memorization confirmation
   String _payloadText;
@@ -34,6 +35,7 @@ class PendingDeliveryFragment {
     required this.expectedHash,
     required this.expiresAt,
     this.assignedAt,
+    this.senderUsername = 'UNKNOWN',
   }) : _payloadText = payloadText;
 
   factory PendingDeliveryFragment.fromMap(Map<String, dynamic> map) {
@@ -53,6 +55,9 @@ class PendingDeliveryFragment {
       assignedAt: map['assigned_at'] != null
           ? DateTime.tryParse(map['assigned_at'].toString())
           : null,
+      senderUsername: (map['sender_username'] as String?)?.trim().isNotEmpty == true
+          ? map['sender_username'] as String
+          : 'UNKNOWN',
     );
   }
 

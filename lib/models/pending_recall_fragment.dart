@@ -7,6 +7,8 @@ class PendingRecallFragment {
   final int sizeBytes;
   final String expectedHash;
   final DateTime retrievalCreatedAt;
+  final String senderUsername;
+  final List<int> canonicalIndices;
 
   const PendingRecallFragment({
     required this.retrievalId,
@@ -17,6 +19,8 @@ class PendingRecallFragment {
     required this.sizeBytes,
     required this.expectedHash,
     required this.retrievalCreatedAt,
+    this.senderUsername = 'UNKNOWN',
+    this.canonicalIndices = const [],
   });
 
   factory PendingRecallFragment.fromMap(Map<String, dynamic> map) {
@@ -31,6 +35,13 @@ class PendingRecallFragment {
       retrievalCreatedAt: map['retrieval_created_at'] != null
           ? DateTime.tryParse(map['retrieval_created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
+      senderUsername: (map['sender_username'] as String?)?.trim().isNotEmpty == true
+          ? map['sender_username'] as String
+          : 'UNKNOWN',
+      canonicalIndices: (map['canonical_indices'] as List<dynamic>?)
+              ?.map((e) => (e as num).toInt())
+              .toList() ??
+          const [],
     );
   }
 
@@ -44,6 +55,8 @@ class PendingRecallFragment {
       'size_bytes': sizeBytes,
       'expected_hash': expectedHash,
       'retrieval_created_at': retrievalCreatedAt.toIso8601String(),
+      'sender_username': senderUsername,
+      'canonical_indices': canonicalIndices,
     };
   }
 }

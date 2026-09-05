@@ -12,27 +12,50 @@ import '../models/stored_node_fragment.dart';
 import '../models/user_stored_memory.dart';
 import 'node_storage_service.dart';
 
+class FragmentPayload {
+  final String text;
+  final List<int> canonicalIndices;
+  final int sequenceNumber;
+
+  const FragmentPayload({
+    required this.text,
+    required this.canonicalIndices,
+    required this.sequenceNumber,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'text': text,
+    'indices': canonicalIndices,
+    'sequence_number': sequenceNumber,
+  };
+}
+
 class MemoryStoreResult {
   final String memoryId;
-  final int fragmentCount;
-  final int assignedReplicas;
-  final int fulfilledReplicas;
-  final int pendingReplicas;
-  final List<String> assignedNodeIds;
+  final int packetCount;
+  final int packetsAssigned;
+  final int packetsPending;
+  final int packetsMemorized;
+  final String status;
 
   const MemoryStoreResult({
     required this.memoryId,
-    required this.fragmentCount,
-    required this.assignedReplicas,
-    required this.fulfilledReplicas,
-    required this.pendingReplicas,
-    required this.assignedNodeIds,
+    required this.packetCount,
+    required this.packetsAssigned,
+    required this.packetsPending,
+    required this.packetsMemorized,
+    required this.status,
   });
 
-  bool get hasPendingReplicas => pendingReplicas > 0;
-  bool get hasAssignedReplicas => assignedReplicas > 0;
-  bool get hasFulfilledReplicas => fulfilledReplicas > 0;
-  int get totalReplicas => assignedReplicas + fulfilledReplicas + pendingReplicas;
+  int get fragmentCount => packetCount;
+  int get assignedReplicas => packetsAssigned;
+  int get fulfilledReplicas => packetsMemorized;
+  int get pendingReplicas => packetsPending;
+  List<String> get assignedNodeIds => const [];
+  bool get hasPendingReplicas => packetsPending > 0;
+  bool get hasAssignedReplicas => packetsAssigned > 0;
+  bool get hasFulfilledReplicas => packetsMemorized > 0;
+  int get totalReplicas => packetCount;
 }
 
 class MemoryService {
@@ -52,27 +75,23 @@ class MemoryService {
   /// Holds the active memories count for the authenticated user
   final ValueNotifier<int> activeMemoriesCountNotifier = ValueNotifier<int>(0);
 
-  /// Randomized, overlapping semantic-ish token fragmentation algorithm.
-  /// 
-  /// [Human Server Fragmentation Model]:
-  /// - Does NOT use sequential character/word slices.
-  /// - Tokenizes original text into words/tokens.
-  /// - Groups tokens into natural, human-memorizable semantic-ish phrases (2–3 words).
-  /// - Generates overlapping multi-subset combinations (e.g. `THE MEETING + 4:30`, `4:30 + ROOM 204`).
-  /// - Guarantees that for normal-length messages (>= 3 words), no single fragment contains the complete message.
-  /// - Every token appears across multiple fragments to provide required redundancy for future reconstruction.
-  /// - Randomizes the fragment order before transmission to ensure randomized node distribution.
-  /// - Scales the number of generated fragments with text length (e.g. 4 to 40 fragments).
-  static List<String> fragmentText(String text, {Random? random}) {
+  /// Generates randomized overlapping fragments with canonical phrase indices metadata.
+  /// Canonical indices preserve exact position/overlap identity without storing plaintext.
+  static List<FragmentPayload> generateFragmentPayloads(String text, {Random? random}) {
     final clean = text.trim().replaceAll(RegExp(r'\s+'), ' ');
     if (clean.isEmpty) return [];
 
     final tokens = clean.split(' ').where((t) => t.isNotEmpty).toList();
     if (tokens.isEmpty) return [];
 
-    // Messages with 1 or 2 tokens cannot be divided into multi-subsets without single letters
     if (tokens.length <= 2) {
-      return [clean];
+      return [
+        FragmentPayload(
+          text: clean,
+          canonicalIndices: const [0],
+          sequenceNumber: 1,
+        )
+      ];
     }
 
     final rng = random ?? Random();
@@ -84,7 +103,6 @@ class MemoryService {
 
     while (idx < tokens.length) {
       int len = phraseSize;
-      // If only 1 token would remain at the end, group it with current phrase if phraseSize >= 2
       if (tokens.length - (idx + len) == 1 && phraseSize >= 2) {
         len++;
       } else if (idx + len > tokens.length) {
@@ -94,7 +112,6 @@ class MemoryService {
       idx += len;
     }
 
-    // Ensure we have at least 3 phrases to generate meaningful overlapping subsets
     if (phrases.length < 3 && tokens.length >= 3) {
       phrases.clear();
       for (final t in tokens) {
@@ -103,51 +120,45 @@ class MemoryService {
     }
 
     final int m = phrases.length;
-    final Set<String> fragmentSet = {};
+    final Map<String, List<int>> fragmentMap = {};
 
-    // 2. Generate overlapping multi-subset combinations
-    // Determine dynamic target fragment count scaling with length
+    void addFragment(List<int> phraseIndices) {
+      final fragText = phraseIndices.map((i) => phrases[i]).join(' + ');
+      fragmentMap[fragText] = phraseIndices;
+    }
+
     final int targetCount = max(4, min(40, (m * 1.6).round()));
 
     // Linear consecutive pairs: (0, 1), (1, 2), ..., (m-2, m-1)
-    // ONLY in forward direction (strictly unidirectional)
     for (int i = 0; i < m - 1; i++) {
-      final p1 = phrases[i];
-      final p2 = phrases[i + 1];
-      fragmentSet.add('$p1 + $p2');
+      addFragment([i, i + 1]);
     }
 
-    // Non-consecutive combinations (skip-1 and cross pairs):
-    // Always added symmetrically (bidirectional) so reconstruction can unambiguously
-    // distinguish true consecutive sequence transitions from subset overlap.
+    // Non-consecutive combinations (skip-1 and cross pairs)
     if (m >= 4) {
       for (int i = 0; i < m; i++) {
-        final p1 = phrases[i];
-        final p2 = phrases[(i + 2) % m];
-        if (p1 != p2) {
-          fragmentSet.add('$p1 + $p2');
-          fragmentSet.add('$p2 + $p1');
+        final j = (i + 2) % m;
+        if (phrases[i] != phrases[j]) {
+          addFragment([i, j]);
+          addFragment([j, i]);
         }
       }
     } else if (m == 3) {
-      fragmentSet.add('${phrases[0]} + ${phrases[2]}');
-      fragmentSet.add('${phrases[2]} + ${phrases[0]}');
+      addFragment([0, 2]);
+      addFragment([2, 0]);
     }
 
-    // If m >= 6 and more fragments needed, add 3-phrase combinations
-    if (m >= 6 && fragmentSet.length < targetCount) {
-      for (int i = 0; i < m && fragmentSet.length < targetCount; i++) {
-        final p1 = phrases[i];
-        final p2 = phrases[(i + 2) % m];
-        final p3 = phrases[(i + 4) % m];
-        fragmentSet.add('$p1 + $p2 + $p3');
+    // 3-phrase combinations if m >= 6
+    if (m >= 6 && fragmentMap.length < targetCount) {
+      for (int i = 0; i < m && fragmentMap.length < targetCount; i++) {
+        addFragment([i, (i + 2) % m, (i + 4) % m]);
       }
     }
 
-    // Fill up to targetCount with randomized distinct non-adjacent phrase pairs (symmetrically)
+    // Randomized distinct pairs
     if (m >= 4) {
       int safety = 0;
-      while (fragmentSet.length < targetCount && safety < 200) {
+      while (fragmentMap.length < targetCount && safety < 200) {
         safety++;
         final idx1 = rng.nextInt(m);
         var idx2 = rng.nextInt(m);
@@ -157,31 +168,47 @@ class MemoryService {
           pickTries++;
         }
         if ((idx1 - idx2).abs() > 1) {
-          fragmentSet.add('${phrases[idx1]} + ${phrases[idx2]}');
-          fragmentSet.add('${phrases[idx2]} + ${phrases[idx1]}');
+          addFragment([idx1, idx2]);
+          addFragment([idx2, idx1]);
         }
       }
     }
 
-    final List<String> result = fragmentSet.toList();
-
-    // 3. Strict Non-Completeness Guarantee:
-    // Ensure no fragment ever contains the entire original message for tokens.length >= 3
+    // Strict Non-Completeness Guarantee:
+    // No single fragment may contain all original tokens
     final originalTokenSet = tokens.map((t) => t.toUpperCase()).toSet();
-    result.removeWhere((frag) {
+    final keys = fragmentMap.keys.toList();
+    for (final frag in keys) {
       final fragTokens = frag
           .replaceAll('+', ' ')
           .split(RegExp(r'\s+'))
           .where((t) => t.isNotEmpty)
           .map((t) => t.toUpperCase())
           .toSet();
-      return fragTokens.containsAll(originalTokenSet);
-    });
+      if (fragTokens.containsAll(originalTokenSet)) {
+        fragmentMap.remove(frag);
+      }
+    }
 
-    // 4. Randomize fragment order
-    result.shuffle(rng);
+    final shuffledKeys = fragmentMap.keys.toList()..shuffle(rng);
+    final List<FragmentPayload> payloads = [];
+    for (int i = 0; i < shuffledKeys.length; i++) {
+      final k = shuffledKeys[i];
+      payloads.add(
+        FragmentPayload(
+          text: k,
+          canonicalIndices: fragmentMap[k]!,
+          sequenceNumber: i + 1,
+        ),
+      );
+    }
 
-    return result;
+    return payloads;
+  }
+
+  /// Returns randomized overlapping fragments as strings
+  static List<String> fragmentText(String text, {Random? random}) {
+    return generateFragmentPayloads(text, random: random).map((p) => p.text).toList();
   }
 
   /// Calculates sha256 checksum for a text fragment
@@ -190,14 +217,77 @@ class MemoryService {
     return sha256.convert(bytes).toString();
   }
 
+  /// Reconstructs the original message from recalled responses using canonical position metadata.
+  /// Handles out-of-order arrival, duplicate responses, redundant overlapping fragments,
+  /// and missing fragments deterministically without storing original message plaintext.
+  static String reconstructFromResponses(List<RecalledFragmentItem> items) {
+    if (items.isEmpty) return '';
+
+    final Map<int, String> phraseMap = {};
+
+    for (final item in items) {
+      final text = item.recalledText.trim();
+      if (text.isEmpty) continue;
+
+      final indices = item.canonicalIndices;
+      if (indices.isNotEmpty && text.contains('+')) {
+        final parts = text
+            .split('+')
+            .map((p) => p.trim())
+            .where((p) => p.isNotEmpty)
+            .toList();
+        for (int i = 0; i < parts.length && i < indices.length; i++) {
+          phraseMap[indices[i]] = parts[i];
+        }
+      } else if (indices.isNotEmpty) {
+        phraseMap[indices.first] = text;
+      }
+    }
+
+    if (phraseMap.isNotEmpty) {
+      final sortedIndices = phraseMap.keys.toList()..sort();
+      return sortedIndices.map((idx) => phraseMap[idx]!).join(' ').trim();
+    }
+
+    // Fallback if no canonical indices were present
+    return reconstructFromFragments(items.map((i) => i.recalledText).toList());
+  }
+
   /// Reconstructs the original message from recalled fragments using the overlapping phrase model.
-  static String reconstructFromFragments(List<String> fragments) {
+  static String reconstructFromFragments(
+    List<String> fragments, {
+    List<List<int>>? fragmentIndices,
+  }) {
     final cleanFragments = fragments
         .map((f) => f.trim())
         .where((f) => f.isNotEmpty)
         .toList();
 
     if (cleanFragments.isEmpty) return '';
+
+    if (fragmentIndices != null && fragmentIndices.isNotEmpty) {
+      final Map<int, String> phraseMap = {};
+      for (int i = 0; i < cleanFragments.length && i < fragmentIndices.length; i++) {
+        final frag = cleanFragments[i];
+        final indices = fragmentIndices[i];
+        if (indices.isNotEmpty && frag.contains('+')) {
+          final parts = frag
+              .split('+')
+              .map((p) => p.trim())
+              .where((p) => p.isNotEmpty)
+              .toList();
+          for (int j = 0; j < parts.length && j < indices.length; j++) {
+            phraseMap[indices[j]] = parts[j];
+          }
+        } else if (indices.isNotEmpty) {
+          phraseMap[indices.first] = frag;
+        }
+      }
+      if (phraseMap.isNotEmpty) {
+        final sortedIndices = phraseMap.keys.toList()..sort();
+        return sortedIndices.map((idx) => phraseMap[idx]!).join(' ').trim();
+      }
+    }
 
     // If single fragment without '+', return it directly
     if (cleanFragments.length == 1 && !cleanFragments.first.contains('+')) {
@@ -234,9 +324,7 @@ class MemoryService {
     if (allPhrases.isEmpty) return '';
     if (allPhrases.length == 1) return allPhrases.first;
 
-    // Filter to ONLY unidirectional transitions:
-    // Consecutive edges A -> B are unidirectional (B -> A never exists).
-    // Skip/cross edges A -> C are bidirectional (C -> A also exists).
+    // Filter to ONLY unidirectional transitions
     final Map<String, String> forward = {};
     final Map<String, String> backward = {};
 
@@ -252,7 +340,6 @@ class MemoryService {
       }
     }
 
-    // Find the head of the chain: node with no incoming unidirectional edge
     String? startNode;
     for (final phrase in allPhrases) {
       if (!backward.containsKey(phrase) && forward.containsKey(phrase)) {
@@ -261,14 +348,11 @@ class MemoryService {
       }
     }
 
-    // If all unidirectional edges form a closed cycle (e.g. legacy fragments with wrap),
-    // pick the node starting with capital/sentence start or first phrase
     startNode ??= allPhrases.firstWhere(
       (p) => forward.containsKey(p),
       orElse: () => allPhrases.first,
     );
 
-    // Follow forward chain
     final List<String> chain = [startNode];
     final Set<String> visited = {startNode};
 
@@ -279,7 +363,6 @@ class MemoryService {
       visited.add(next);
     }
 
-    // Add any remaining phrases that were not connected
     for (final phrase in allPhrases) {
       if (!visited.contains(phrase)) {
         chain.add(phrase);
@@ -290,9 +373,9 @@ class MemoryService {
   }
 
   /// Creates a memory record:
-  /// 1. Client-side fragmenting of plaintext.
-  /// 2. Calculates fragment checksum hashes.
-  /// 3. Server enforces 6-month expiry and creates metadata records.
+  /// 1. Client-side fragmenting into FragmentPayloads.
+  /// 2. Clear transient plaintext references immediately.
+  /// 3. Server enforces 1 fragment per distinct human node and 5 active capacity cap.
   /// 4. Plaintext is only routed to temporary delivery inboxes for assigned peer nodes.
   Future<MemoryStoreResult> createMemory(String text) async {
     final client = _supabase;
@@ -314,20 +397,18 @@ class MemoryService {
       );
     }
 
-    // 2. Fragment text client-side
-    final fragments = fragmentText(trimmed);
-    if (fragments.isEmpty) {
+    // 2. Fragment text client-side into FragmentPayloads
+    final payloads = generateFragmentPayloads(trimmed);
+    if (payloads.isEmpty) {
       throw ArgumentError('Unable to generate fragments from provided text.');
     }
 
     try {
-      // 4. Call the secure RPC
-      // Canonical SHA-256 hash is computed server-side with pgcrypto.
-      // Server enforces 6-month expiry & metadata-only storage.
+      // 3. Call the secure RPC
       final response = await client.rpc(
         'store_memory_with_fragments',
         params: {
-          'p_fragments': fragments,
+          'p_fragments': payloads.map((p) => p.toJson()).toList(),
         },
       );
 
@@ -337,18 +418,11 @@ class MemoryService {
 
       final result = MemoryStoreResult(
         memoryId: data['memory_id'] as String? ?? '',
-        fragmentCount:
-            (data['fragment_count'] as num?)?.toInt() ?? fragments.length,
-        assignedReplicas:
-            (data['assigned_replicas'] as num?)?.toInt() ?? 0,
-        fulfilledReplicas:
-            (data['fulfilled_replicas'] as num?)?.toInt() ?? 0,
-        pendingReplicas: (data['pending_replicas'] as num?)?.toInt() ??
-            (fragments.length * 3),
-        assignedNodeIds: (data['assigned_nodes'] as List<dynamic>?)
-                ?.map((e) => e.toString())
-                .toList() ??
-            [],
+        packetCount: (data['packet_count'] as num?)?.toInt() ?? payloads.length,
+        packetsAssigned: (data['packets_assigned'] as num?)?.toInt() ?? 0,
+        packetsPending: (data['packets_pending'] as num?)?.toInt() ?? 0,
+        packetsMemorized: (data['packets_memorized'] as num?)?.toInt() ?? 0,
+        status: data['status'] as String? ?? 'active',
       );
 
       // Refresh memory count
@@ -358,6 +432,25 @@ class MemoryService {
     } catch (e) {
       debugPrint('Error in store_memory_with_fragments: $e');
       rethrow;
+    }
+  }
+
+  /// Fetches live memorized packet status for sender without exposing recipients or plaintext
+  Future<Map<String, dynamic>> getMemoryPacketStatus(String memoryId) async {
+    final client = _supabase;
+    if (client == null || _currentUser == null) return {};
+
+    try {
+      final response = await client.rpc(
+        'get_memory_packet_status',
+        params: {'p_memory_id': memoryId},
+      );
+      return response is Map<String, dynamic>
+          ? response
+          : Map<String, dynamic>.from(response as Map);
+    } catch (e) {
+      debugPrint('Error fetching memory packet status: $e');
+      return {};
     }
   }
 

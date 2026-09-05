@@ -184,18 +184,42 @@ class _RecallSubmissionDialogState extends State<RecallSubmissionDialog> {
                   ),
                   const SizedBox(height: 14),
 
-                  Text(
-                    'RECALL SIGNAL RECEIVED',
-                    style: GoogleFonts.playfairDisplay(
-                      color: AppTheme.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
+                  // Clear Recovery Request Banner (Requirement 7)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppTheme.signalWarning.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(color: AppTheme.signalWarning),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'RECOVERY REQUEST',
+                          style: GoogleFonts.spaceMono(
+                            color: AppTheme.signalWarning,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${recall.senderUsername.toUpperCase()} IS REQUESTING MEMORY RECOVERY',
+                          style: GoogleFonts.inter(
+                            color: AppTheme.textPrimary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 12),
 
                   Text(
-                    'The memory owner has initiated retrieval. Please recall the exact fragment plaintext stored in your biological memory and enter it below.',
+                    'Please recall the exact fragment plaintext stored in your biological memory and enter it below.',
                     style: GoogleFonts.inter(
                       color: AppTheme.textSecondary,
                       fontSize: 12,

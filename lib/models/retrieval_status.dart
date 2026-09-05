@@ -3,12 +3,14 @@ class RecalledFragmentItem {
   final int sequenceNumber;
   final String recalledText;
   final DateTime createdAt;
+  final List<int> canonicalIndices;
 
   const RecalledFragmentItem({
     required this.fragmentId,
     required this.sequenceNumber,
     required this.recalledText,
     required this.createdAt,
+    this.canonicalIndices = const [],
   });
 
   factory RecalledFragmentItem.fromMap(Map<String, dynamic> map) {
@@ -19,6 +21,10 @@ class RecalledFragmentItem {
       createdAt: map['created_at'] != null
           ? DateTime.tryParse(map['created_at'].toString()) ?? DateTime.now()
           : DateTime.now(),
+      canonicalIndices: (map['canonical_indices'] as List<dynamic>?)
+              ?.map((e) => (e as num).toInt())
+              .toList() ??
+          const [],
     );
   }
   String get fragmentText => recalledText;

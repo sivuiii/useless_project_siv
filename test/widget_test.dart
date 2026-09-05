@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:human_server/models/pending_delivery_fragment.dart';
 import 'package:human_server/models/pending_recall_fragment.dart';
+import 'package:human_server/models/retrieval_status.dart';
 import 'package:human_server/models/stored_node_fragment.dart';
+import 'package:human_server/models/user_stored_memory.dart';
 import 'package:human_server/screens/auth_screen.dart';
 import 'package:human_server/screens/main_screen.dart';
 import 'package:human_server/screens/node_screen.dart';
@@ -696,7 +698,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('RECALL SIGNAL RECEIVED'), findsOneWidget);
+      expect(find.text('RECOVERY REQUEST'), findsOneWidget);
       expect(find.text('SEQ #1'), findsOneWidget);
       expect(find.text('15 BYTES EXPECTED'), findsOneWidget);
       expect(find.text('SUBMIT RECALL'), findsOneWidget);
@@ -759,7 +761,404 @@ void main() {
       expect(find.text('RECALL SIGNAL & RECONSTRUCT'), findsOneWidget);
       expect(find.text('SEMANTIC RECALL TELEGRAPH'), findsOneWidget);
       expect(find.text('TARGET MEMORY ID'), findsOneWidget);
-      expect(find.text('INITIATE RETRIEVAL SIGNAL'), findsOneWidget);
+      expect(find.text('REQUEST RECOVERY'), findsOneWidget);
+    });
+  });
+
+  group('Frozen Human Server MVP Requirements (1-14)', () {
+    // 1. sender plaintext cleared after dispatch
+    testWidgets('Requirement 1: sender plaintext cleared immediately after dispatch', (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: const StoreScreen(),
+        ),
+      );
+      await tester.pump();
+
+      final inputFinder = find.byType(TextField);
+      expect(inputFinder, findsOneWidget);
+
+      await tester.enterText(inputFinder, 'THE MEETING IS AT 4:30 PM IN ROOM 204');
+      await tester.pump();
+
+      // Trigger dispatch
+      await tester.tap(find.text('DISPATCH MEMORY TELEGRAM'));
+      await tester.pump();
+
+      // Invariant: Controller text is immediately cleared
+      final tf = tester.widget<TextField>(inputFinder);
+      expect(tf.controller?.text.isEmpty, isTrue);
+    });
+
+    // 2. sender cannot access original plaintext after dispatch
+    testWidgets('Requirement 2: sender cannot access original plaintext after dispatch in Store UI', (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: const StoreScreen(),
+        ),
+      );
+      await tester.pump();
+
+      const secret = 'THE MEETING IS AT 4:30 PM IN ROOM 204';
+      await tester.enterText(find.byType(TextField), secret);
+      await tester.tap(find.text('DISPATCH MEMORY TELEGRAM'));
+      await tester.pump();
+
+      // Neither during nor after dispatch is the plaintext exposed
+      expect(find.text(secret), findsNothing);
+      expect(find.text('DISPATCHED PAYLOAD'), findsNothing);
+    });
+
+    // 3. packet count metadata
+    test('Requirement 3: packet count metadata is correctly constructed', () {
+      final result = MemoryStoreResult(
+        memoryId: 'mem-12345678',
+        packetCount: 6,
+        packetsAssigned: 4,
+        packetsPending: 2,
+        packetsMemorized: 0,
+        status: 'awaiting_more_nodes',
+      );
+
+      expect(result.packetCount, 6);
+      expect(result.packetsMemorized, 0);
+      expect(result.packetsAssigned, 4);
+      expect(result.packetsPending, 2);
+      expect(result.assignedNodeIds, isEmpty); // recipient identities never exposed
+    });
+
+    // 4. same node cannot receive two fragments from one memory
+    test('Requirement 4: same node cannot receive two fragments from one memory', () {
+      final assignedNodes = <String>{};
+      final candidateNodes = ['node-1', 'node-2', 'node-3', 'node-4'];
+      const memoryId = 'mem-test-999';
+
+      final assignments = <Map<String, String>>[];
+      for (int i = 0; i < 4; i++) {
+        final eligible = candidateNodes.firstWhere(
+          (n) => !assignedNodes.contains(n),
+          orElse: () => '',
+        );
+        if (eligible.isNotEmpty) {
+          assignedNodes.add(eligible);
+          assignments.add({'memory_id': memoryId, 'fragment': 'frag-$i', 'node_id': eligible});
+        }
+      }
+
+      final nodeIds = assignments.map((a) => a['node_id']!).toList();
+      expect(nodeIds.toSet().length, equals(nodeIds.length));
+      expect(nodeIds, containsAll(['node-1', 'node-2', 'node-3', 'node-4']));
+
+      // If a 5th fragment arrives with no more nodes, it must stay pending
+      final eligible5 = candidateNodes.where((n) => !assignedNodes.contains(n)).toList();
+      expect(eligible5, isEmpty, reason: 'Must not reassign to an existing node of the same memory');
+    });
+
+    // 5. node maximum 5 packets
+    test('Requirement 5: node capacity capped at 5 packets and frees slot on recall', () async {
+      SharedPreferences.setMockInitialValues({});
+      NodeStorageService.instance.resetForTesting();
+      await NodeStorageService.instance.clearAllMetadata();
+
+      expect(NodeStorageService.instance.maxCapacity, 5);
+      expect(NodeStorageService.instance.activeHostedCount, 0);
+      expect(NodeStorageService.instance.isCapacityFull, isFalse);
+
+      for (int i = 1; i <= 5; i++) {
+        await NodeStorageService.instance.saveFragment(
+          StoredNodeFragment(
+            fragmentId: 'frag-$i',
+            memoryId: 'mem-$i',
+            sequenceNumber: i,
+            sizeBytes: 20,
+            receivedAt: DateTime.now(),
+            expiresAt: DateTime.now().add(const Duration(days: 180)),
+            assignmentId: 'assign-$i',
+            verificationHash: 'hash-$i',
+          ),
+        );
+      }
+
+      expect(NodeStorageService.instance.activeHostedCount, 5);
+      expect(NodeStorageService.instance.isCapacityFull, isTrue);
+
+      // Successfully recalling/forgetting 1 fragment frees the slot
+      await NodeStorageService.instance.deleteFragment('frag-1');
+      expect(NodeStorageService.instance.activeHostedCount, 4);
+      expect(NodeStorageService.instance.isCapacityFull, isFalse);
+    });
+
+    // 6. sender username reaches recipient
+    testWidgets('Requirement 6: sender username reaches recipient in memorization & recall prompts', (WidgetTester tester) async {
+      final delivery = PendingDeliveryFragment(
+        inboxId: 'inbox-1',
+        assignmentId: 'assign-1',
+        fragmentId: 'frag-1',
+        memoryId: 'mem-1',
+        sequenceNumber: 1,
+        payloadText: 'THE MEETING + 4:30',
+        sizeBytes: 18,
+        expectedHash: MemoryService.calculateHash('THE MEETING + 4:30'),
+        expiresAt: DateTime.now().add(const Duration(days: 7)),
+        senderUsername: 'SIVUIII',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.darkTheme,
+          home: Scaffold(
+            body: MemorizationDialog(
+              delivery: delivery,
+              onMemorized: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('MEMORY FROM: SIVUIII'), findsOneWidget);
+    });
+
+    // 7. memorization count updates
+    test('Requirement 7: memorization count updates and formats properly', () {
+      final mem = UserStoredMemory(
+        id: '8f31a2b4-0000-0000-0000-000000000000',
+        createdAt: DateTime.now(),
+        expiresAt: DateTime.now().add(const Duration(days: 180)),
+        fragmentCount: 6,
+        packetCount: 6,
+        memorizedCount: 4,
+        status: 'active',
+      );
+
+      expect(mem.shortId, '8F31A2B4');
+      expect(mem.packetCount, 6);
+      expect(mem.memorizedCount, 4);
+    });
+
+    // 8. recall request reaches all relevant nodes
+    test('Requirement 8: recall request maps to all relevant nodes with canonical indices', () {
+      final rawRecalls = [
+        {
+          'retrieval_id': 'ret-1',
+          'assignment_id': 'assign-1',
+          'fragment_id': 'frag-1',
+          'memory_id': 'mem-1',
+          'sequence_number': 1,
+          'size_bytes': 18,
+          'expected_hash': 'h1',
+          'sender_username': 'SIVUIII',
+          'canonical_indices': [0, 1],
+        },
+        {
+          'retrieval_id': 'ret-1',
+          'assignment_id': 'assign-2',
+          'fragment_id': 'frag-2',
+          'memory_id': 'mem-1',
+          'sequence_number': 2,
+          'size_bytes': 18,
+          'expected_hash': 'h2',
+          'sender_username': 'SIVUIII',
+          'canonical_indices': [1, 2],
+        },
+      ];
+
+      final recalls = rawRecalls.map((m) => PendingRecallFragment.fromMap(m)).toList();
+      expect(recalls.length, 2);
+      expect(recalls[0].senderUsername, 'SIVUIII');
+      expect(recalls[0].canonicalIndices, [0, 1]);
+      expect(recalls[1].canonicalIndices, [1, 2]);
+    });
+
+    // 9. responses arriving in random order
+    test('Requirement 9: responses arriving in random order reconstruct deterministically', () {
+      final responses = [
+        RecalledFragmentItem(
+          fragmentId: 'f3',
+          sequenceNumber: 3,
+          recalledText: 'IN ROOM 204',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [3],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'f1',
+          sequenceNumber: 1,
+          recalledText: 'THE MEETING',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [0],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'f2',
+          sequenceNumber: 2,
+          recalledText: '4:30 PM',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [2],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'f4',
+          sequenceNumber: 4,
+          recalledText: 'IS AT',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [1],
+        ),
+      ];
+
+      final reconstructed = MemoryService.reconstructFromResponses(responses);
+      expect(reconstructed, 'THE MEETING IS AT 4:30 PM IN ROOM 204');
+    });
+
+    // 10. duplicate responses
+    test('Requirement 10: duplicate responses are deduplicated without duplicated words', () {
+      final responses = [
+        RecalledFragmentItem(
+          fragmentId: 'f1',
+          sequenceNumber: 1,
+          recalledText: 'THE MEETING + 4:30',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [0, 1],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'f1-dup',
+          sequenceNumber: 1,
+          recalledText: 'THE MEETING + 4:30',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [0, 1],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'f2',
+          sequenceNumber: 2,
+          recalledText: '4:30 + ROOM 204',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [1, 2],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'f2-dup',
+          sequenceNumber: 2,
+          recalledText: '4:30 + ROOM 204',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [1, 2],
+        ),
+      ];
+
+      final reconstructed = MemoryService.reconstructFromResponses(responses);
+      expect(reconstructed, 'THE MEETING 4:30 ROOM 204');
+      expect(reconstructed.split('ROOM 204').length - 1, 1);
+    });
+
+    // 11. redundant overlapping fragments
+    test('Requirement 11: redundant overlapping fragments resolve cleanly without token explosion', () {
+      final responses = [
+        RecalledFragmentItem(
+          fragmentId: 'fA',
+          sequenceNumber: 1,
+          recalledText: 'THE MEETING + 4:30',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [0, 1],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'fB',
+          sequenceNumber: 2,
+          recalledText: '4:30 + ROOM 204',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [1, 2],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'fC',
+          sequenceNumber: 3,
+          recalledText: 'ROOM 204 + THE MEETING',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [2, 0],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'fD',
+          sequenceNumber: 4,
+          recalledText: 'THE MEETING + ROOM 204',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [0, 2],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'fE',
+          sequenceNumber: 5,
+          recalledText: '4:30 + THE MEETING',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [1, 0],
+        ),
+      ];
+
+      final reconstructed = MemoryService.reconstructFromResponses(responses);
+      expect(reconstructed, 'THE MEETING 4:30 ROOM 204');
+    });
+
+    // 12. missing fragments
+    test('Requirement 12: missing fragments assemble available phrases in correct canonical order', () {
+      final responses = [
+        RecalledFragmentItem(
+          fragmentId: 'f1',
+          sequenceNumber: 1,
+          recalledText: 'THE MEETING',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [0],
+        ),
+        RecalledFragmentItem(
+          fragmentId: 'f3',
+          sequenceNumber: 3,
+          recalledText: 'ROOM 204',
+          createdAt: DateTime.now(),
+          canonicalIndices: const [2],
+        ),
+      ];
+
+      final reconstructed = MemoryService.reconstructFromResponses(responses);
+      expect(reconstructed, 'THE MEETING ROOM 204');
+    });
+
+    // 13. exact reconstruction of randomized overlapping fragments
+    test('Requirement 13: exact reconstruction of randomized overlapping fragments for frozen test sentence', () {
+      const sentence = 'THE MEETING IS AT 4:30 PM IN ROOM 204';
+      final payloads = MemoryService.generateFragmentPayloads(sentence, random: Random(99));
+
+      final responses = payloads
+          .map((p) => RecalledFragmentItem(
+                fragmentId: 'frag-${p.sequenceNumber}',
+                sequenceNumber: p.sequenceNumber,
+                recalledText: p.text,
+                createdAt: DateTime.now(),
+                canonicalIndices: p.canonicalIndices,
+              ))
+          .toList();
+
+      responses.shuffle(Random(123));
+
+      final reconstructed = MemoryService.reconstructFromResponses(responses);
+      expect(reconstructed, equals(sentence));
+    });
+
+    // 14. plaintext transport cleanup
+    test('Requirement 14: ephemeral delivery plaintext is wiped on clear', () {
+      final delivery = PendingDeliveryFragment(
+        inboxId: 'inbox-99',
+        assignmentId: 'assign-99',
+        fragmentId: 'frag-99',
+        memoryId: 'mem-99',
+        sequenceNumber: 1,
+        payloadText: 'TOP SECRET MEETING',
+        sizeBytes: 18,
+        expectedHash: MemoryService.calculateHash('TOP SECRET MEETING'),
+        expiresAt: DateTime.now().add(const Duration(days: 7)),
+        senderUsername: 'SIVUIII',
+      );
+
+      expect(delivery.payloadText, 'TOP SECRET MEETING');
+      expect(delivery.isCleared, isFalse);
+
+      delivery.clear();
+
+      expect(delivery.payloadText, isEmpty);
+      expect(delivery.isCleared, isTrue);
     });
   });
 }

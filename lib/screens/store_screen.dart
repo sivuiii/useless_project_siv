@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -17,8 +18,11 @@ class _StoreScreenState extends State<StoreScreen> {
   final TextEditingController _controller = TextEditingController();
   bool _isStoring = false;
   bool _showConfirmation = false;
-  String _storedSummary = '';
-  MemoryStoreResult? _storeResult;
+  String _memoryId = '';
+  int _packetsCreated = 0;
+  int _packetsMemorized = 0;
+  int _packetsPending = 0;
+  Timer? _statusTimer;
 
   @override
   void initState() {
@@ -28,6 +32,7 @@ class _StoreScreenState extends State<StoreScreen> {
 
   @override
   void dispose() {
+    _statusTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -47,6 +52,9 @@ class _StoreScreenState extends State<StoreScreen> {
       return;
     }
 
+    // REQUIREMENT 1: Clear plaintext IMMEDIATELY from text field and RAM
+    _controller.clear();
+
     setState(() {
       _isStoring = true;
     });
@@ -57,9 +65,16 @@ class _StoreScreenState extends State<StoreScreen> {
         setState(() {
           _isStoring = false;
           _showConfirmation = true;
-          _storeResult = result;
-          _storedSummary = text;
-          _controller.clear();
+          _memoryId = result.memoryId;
+          _packetsCreated = result.packetCount;
+          _packetsPending = result.packetsPending;
+          _packetsMemorized = result.packetsMemorized;
+        });
+
+        // Start live polling for memorization count updates
+        _statusTimer?.cancel();
+        _statusTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+          _pollMemoryPacketStatus();
         });
       }
     } catch (e) {
@@ -81,11 +96,31 @@ class _StoreScreenState extends State<StoreScreen> {
     }
   }
 
+  Future<void> _pollMemoryPacketStatus() async {
+    if (!mounted || _memoryId.isEmpty) return;
+    try {
+      final status = await MemoryService.instance.getMemoryPacketStatus(_memoryId);
+      if (!mounted) return;
+      if (status.isNotEmpty) {
+        setState(() {
+          _packetsCreated = (status['packet_count'] as num?)?.toInt() ?? _packetsCreated;
+          _packetsPending = (status['packets_pending'] as num?)?.toInt() ?? _packetsPending;
+          _packetsMemorized = (status['packets_memorized'] as num?)?.toInt() ?? _packetsMemorized;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error polling memory packet status: $e');
+    }
+  }
+
   void _resetForm() {
+    _statusTimer?.cancel();
     setState(() {
       _showConfirmation = false;
-      _storedSummary = '';
-      _storeResult = null;
+      _memoryId = '';
+      _packetsCreated = 0;
+      _packetsMemorized = 0;
+      _packetsPending = 0;
     });
   }
 
@@ -173,8 +208,8 @@ class _StoreScreenState extends State<StoreScreen> {
 
               const SizedBox(height: 14),
 
-              if (_showConfirmation && _storeResult != null) ...[
-                // Confirmation State Card
+              if (_showConfirmation) ...[
+                // Confirmation State Card (METADATA ONLY - ZERO PLAINTEXT)
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -202,7 +237,7 @@ class _StoreScreenState extends State<StoreScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Telegram Dispatched & Fragmented',
+                                  'MEMORY DISPATCHED',
                                   style: GoogleFonts.playfairDisplay(
                                     color: AppTheme.textPrimary,
                                     fontSize: 16,
@@ -210,7 +245,7 @@ class _StoreScreenState extends State<StoreScreen> {
                                   ),
                                 ),
                                 Text(
-                                  'ID: ${_storeResult!.memoryId.isNotEmpty ? (_storeResult!.memoryId.length >= 8 ? _storeResult!.memoryId.substring(0, 8).toUpperCase() : _storeResult!.memoryId) : 'MEM-SAVED'}',
+                                  'ID: ${_memoryId.isNotEmpty ? (_memoryId.length >= 8 ? 'MEM-${_memoryId.substring(0, 8).toUpperCase()}' : _memoryId) : 'MEM-SAVED'}',
                                   style: GoogleFonts.spaceMono(
                                     color: AppTheme.brassLight,
                                     fontSize: 11,
@@ -222,28 +257,71 @@ class _StoreScreenState extends State<StoreScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
                       const Divider(thickness: 0.8),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 10),
 
-                      // Safe Responsive Telemetry Stats Row (with Expanded to prevent overflow)
-                      Row(
-                        children: [
-                          Expanded(child: _buildStatColumn('CREATED', '${_storeResult!.fragmentCount} FRAGS')),
-                          Expanded(child: _buildStatColumn('ASSIGNED', '${_storeResult!.assignedReplicas} REPS')),
-                          Expanded(child: _buildStatColumn('FULFILLED', '${_storeResult!.fulfilledReplicas} REPS')),
-                          Expanded(child: _buildStatColumn('PENDING', '${_storeResult!.pendingReplicas} REPS')),
-                        ],
+                      // Frozen Spec: PACKETS CREATED: X and PACKETS MEMORIZED: Y / X
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: AppTheme.surfaceElevated,
+                          borderRadius: BorderRadius.circular(2),
+                          border: Border.all(color: AppTheme.border),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  'PACKETS CREATED: $_packetsCreated',
+                                  style: GoogleFonts.spaceMono(
+                                    color: AppTheme.textPrimary,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppTheme.background,
+                                    borderRadius: BorderRadius.circular(2),
+                                    border: Border.all(color: AppTheme.signalOnline),
+                                  ),
+                                  child: Text(
+                                    'DISTRIBUTED',
+                                    style: GoogleFonts.spaceMono(
+                                      color: AppTheme.signalOnline,
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'PACKETS MEMORIZED: $_packetsMemorized / $_packetsCreated',
+                              style: GoogleFonts.spaceMono(
+                                color: AppTheme.brassLight,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 12),
 
-                      if (_storeResult!.hasPendingReplicas) ...[
+                      if (_packetsPending > 0) ...[
                         Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
                             color: AppTheme.background,
                             borderRadius: BorderRadius.circular(2),
-                            border: Border.all(color: AppTheme.border),
+                            border: Border.all(color: AppTheme.signalWarning.withValues(alpha: 0.6)),
                           ),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -252,11 +330,9 @@ class _StoreScreenState extends State<StoreScreen> {
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  _storeResult!.assignedReplicas == 0
-                                      ? 'Awaiting peer stations: Fragment created. Replicas will be assigned when peers join.'
-                                      : '${_storeResult!.pendingReplicas} replica(s) pending: Waiting for additional peer human stations.',
+                                  'Awaiting more human nodes / incomplete distribution ($_packetsPending packets pending peer nodes).',
                                   style: GoogleFonts.inter(
-                                    color: AppTheme.textSecondary,
+                                    color: AppTheme.signalWarning,
                                     fontSize: 11,
                                     height: 1.3,
                                   ),
@@ -268,48 +344,7 @@ class _StoreScreenState extends State<StoreScreen> {
                         const SizedBox(height: 12),
                       ],
 
-                      Text(
-                        'DISPATCHED PAYLOAD',
-                        style: GoogleFonts.inter(
-                          color: AppTheme.textMuted,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppTheme.parchment,
-                          border: Border.all(color: AppTheme.border),
-                        ),
-                        child: Text(
-                          _storedSummary,
-                          style: GoogleFonts.courierPrime(
-                            color: AppTheme.ink,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-
-                      if (_storeResult!.assignedNodeIds.isNotEmpty) ...[
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: _storeResult!.assignedNodeIds.map((id) {
-                            final shortId = id.length >= 8 ? id.substring(0, 8).toUpperCase() : id;
-                            return _buildNodeTag('STATION #$shortId', 'Assigned');
-                          }).toList(),
-                        ),
-                      ] else ...[
-                        _buildNodeTag('Pending Replicas', 'Awaiting peers'),
-                      ],
-
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 8),
                       SizedBox(
                         width: double.infinity,
                         height: 42,
@@ -339,68 +374,6 @@ class _StoreScreenState extends State<StoreScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildStatColumn(String label, String val) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            color: AppTheme.textMuted,
-            fontSize: 9,
-            fontWeight: FontWeight.w600,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        const SizedBox(height: 2),
-        Text(
-          val,
-          style: GoogleFonts.playfairDisplay(
-            color: AppTheme.textPrimary,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildNodeTag(String nodeName, String status) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceElevated,
-        borderRadius: BorderRadius.circular(2),
-        border: Border.all(color: AppTheme.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(
-              color: status == 'Assigned' ? AppTheme.signalOnline : AppTheme.signalWarning,
-              shape: BoxShape.circle,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Text(
-            '$nodeName ($status)'.toUpperCase(),
-            style: GoogleFonts.spaceMono(
-              color: AppTheme.textSecondary,
-              fontSize: 9.5,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
       ),
     );
   }
